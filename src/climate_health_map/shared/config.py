@@ -25,6 +25,9 @@ class Settings(BaseSettings):
         '5b18344c-6c30-40ba-92ad-48a2136efe6b',  # oa climate health v4
     ]
 
+    # Root of the (git-ignored) data tree synced via rsync (see Documentation/DataRetrieval.md)
+    DATA_ROOT: Path = Path('data')
+
     model_config = SettingsConfigDict(
         case_sensitive=True,
         env_prefix='NACSOS_',

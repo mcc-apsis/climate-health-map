@@ -10,6 +10,9 @@ from climate_health_map.geoparser import mordecai
 from climate_health_map.topics import topic_model
 from climate_health_map.gap_filling import abstracts_app
 from climate_health_map.scatterplot import app as scatterplot_app
+from climate_health_map.attribution import app as attribution_app
+from climate_health_map.data.burden import app as burden_app
+from climate_health_map.map import app as map_app
 
 
 def command_tree(app: typer.Typer) -> Tree:
@@ -42,6 +45,9 @@ def main() -> None:
     app.add_typer(ingest_app, name='ingest')
     app.add_typer(abstracts_app, name='hydrate')
     app.add_typer(scatterplot_app, name='scatterplot')
+    app.add_typer(attribution_app, name='attribution')
+    app.add_typer(burden_app, name='burden')
+    app.add_typer(map_app, name='map')
     app.command('geoparser', help='Extract geolocations using mordecai where the information is missing in the database')(mordecai)
     app.command('topicmodel', help='Apply topic model to unseen records')(topic_model)
 
