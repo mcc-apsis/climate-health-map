@@ -5,8 +5,8 @@ import typer
 
 
 def export_grid(
-    config: Annotated[Path, typer.Option(help='Path to config file')],
     target: Annotated[Path, typer.Option(help='Target CSV file')],
+    config: Annotated[Path | None, typer.Option(help='Path to config file (default: $CH_CONFIG or config/default.env)')] = None,
     loglevel: Annotated[str, typer.Option(help='Loglevel')] = 'INFO',
 ) -> None:
     """Export the per-(grid-cell, year) attribution grid as a flat CSV."""
