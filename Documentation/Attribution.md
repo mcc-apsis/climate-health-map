@@ -1,4 +1,4 @@
-# Attribution of grid-cell temperature trends
+# Attribution of grid-cell temperature and precipitation trends
 
 ## Methods
 
@@ -19,6 +19,14 @@ historical simulations with natural forcings only (hist-nat, from DAMIP; Gillett
 and pre-industrial control simulations (piControl).
 Annual means are taken from CMIP6-ng (Brunner et al., 2020)
 and conservatively remapped from its 2.5° grid to the 5° grid.
+
+Precipitation uses ERA5 total precipitation (converted from m/day to kg m⁻² s⁻¹)
+and the CMIP6-ng `pr` files, both on the 2.5° grid (72 × 144 cells).
+CMIP6-ng provides `pr` only on that grid, so the observations are regridded to it.
+The same experiments, models, run selection and trend method are used as for temperature.
+Precipitation trends are absolute (kg m⁻² s⁻¹ per century), as in Knutson and Zeng (2018),
+who report absolute trends and mask cells only by observational data coverage.
+ERA5 has no gaps, so no cells are masked.
 
 ### Models and runs
 
@@ -85,7 +93,12 @@ The distributions of all models are pooled with equal weight, giving 350 samples
 
 ### Attribution categories
 
-A normal distribution is fitted to each pooled distribution (by its sample mean and standard deviation).
+For temperature, a normal distribution is fitted to each pooled distribution (by its sample mean and standard deviation).
+For precipitation, which is not normally distributed, the distribution of each model is summarised by its percentiles (0 to 100 in steps of 1),
+and the percentiles are averaged over the models.
+This gives an average distribution whose percentiles are the means of the model percentiles,
+following Knutson and Zeng (2018) and Callaghan et al. (2021).
+The observed percentile is interpolated linearly between the averaged percentiles.
 The observed trend of each cell and end year is placed on both distributions as percentiles,
 p_AF for the all-forcing distribution and p_NAT for the natural-only distribution.
 For positive (warming) trends, the first of the following rules that applies gives the category:
@@ -120,15 +133,22 @@ Cells with a zero observed trend or missing inputs have no category.
 - HadGEM3-GC31-LL, which has no ssp370 runs in the current inputs, pending ESGF.
 - The 2.5° grid and retrieval of its inputs from ESGF.
 - ssp245 as scenario, for which `ssp245-nat` exists for only four models.
-- A categorisation test for precipitation, whose trends are typically not normally distributed.
-  The trend pipeline runs for `pr`, and `categorize` accepts only `tas`.
+- Temperature uses the pooled distribution of Knutson et al. (2013) and Callaghan et al. (2021), and precipitation the average distribution. Both papers give this split.
+- The category rules differ from Callaghan et al. (2021) and Knutson and Zeng (2018) in three respects:
+  there is no category ±4 (observed trend outside the natural-only range with the opposite sign to the all-forcing mean),
+  the sign is taken from the observed trend and not from the all-forcing mean,
+  and Knutson and Zeng additionally require an attributable trend to be closer to the all-forcing than to the natural-only mean.
+  The 96th and 4th percentile cut-offs for the natural-only distribution are inherited from the legacy code.
+- ERA5 precipitation variability is larger than modelled variability in most cells (median scaling factor 1.2 to 1.4, up to 20),
+  whereas Callaghan et al. (2021) find models overestimating variability against GPCC.
+- ERA5 covers the oceans, so precipitation categories are assigned there too, where Knutson and Zeng use land-only GPCC.
 
 ## Implementation
 
 ```bash
 healthmap attribution download     # ERA5 + CMIP6 (g5) inputs for tas and pr
 healthmap attribution trends       # drift-corrected trends + resampling
-healthmap attribution categorize   # per-cell attribution category
+healthmap attribution categorize   # per-cell attribution category (add --variable pr --grid g025 for precipitation)
 healthmap attribution export-grid  # per-(cell, year) attribution grid CSV
 ```
 
@@ -136,7 +156,10 @@ Decisions are recorded in this document and in `config/attribution.yaml`, which 
 The configuration holds the model list, grid (`g5`), scenario (`ssp370`) and observation start year (1940).
 Other parameters are defaults of `trends`: trend start year 1951, end years 1990–2023, at least three hist-nat runs,
 50 resampled segments drawn with seed 2023, and the 1995–2014 splice baseline.
-The category thresholds are keyword defaults of `categorize_trends`.
+The category thresholds are keyword defaults of `assign_categories`.
+`trends --variable pr --grid g025` writes to `data/attribution/trends/pr_g025`,
+and `categorize --variable pr --grid g025` writes `data/attribution/categories/pr_g025.nc`,
+whose `distribution` attribute records the distribution used.
 A change to a decision updates this document in the same commit as the code that depends on it.
 
 `trends` writes one netCDF file per model and `obs.nc` to `data/attribution/trends/<variable>_<grid>`.
