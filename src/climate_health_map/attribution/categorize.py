@@ -70,8 +70,8 @@ def categorize(
         Path | None, typer.Option(help='Trend files as obs.nc and <model>.nc (default: <DATA_ROOT>/attribution/trends/<variable>_<grid>)')
     ] = None,
     target: Annotated[Path | None, typer.Option(help='Output netCDF (default: <DATA_ROOT>/attribution/categories/<variable>_<grid>.nc)')] = None,
-    grid: Annotated[str, typer.Option(help='Grid suffix of the trend directory (g5 or g025)')] = 'g5',
-    models: Annotated[list[str] | None, typer.Option(help='Models to use (default: every <model>.nc in the trends directory)')] = None,
+    grid: Annotated[str | None, typer.Option(help='Grid suffix of the trend directory (default: grid in config/attribution.yaml)')] = None,
+    models: Annotated[list[str] | None, typer.Option(help='Models to use (default: models in config/attribution.yaml)')] = None,
     loglevel: Annotated[str, typer.Option(help='Loglevel')] = 'INFO',
 ) -> None:
     """Assign per-cell attribution categories from resampled trend distributions."""
@@ -81,11 +81,14 @@ def categorize(
     if variable != 'tas':
         raise typer.BadParameter('Only tas is categorized: precipitation trends are not normally distributed, so they need a different test')
     settings = load_settings(config)
+    grid = grid or settings.ATTRIBUTION.grid
+    models = models or settings.ATTRIBUTION.models
     trends_dir = trends_dir or settings.DATA_ROOT / 'attribution' / 'trends' / f'{variable}_{grid}'
     target = target or settings.DATA_ROOT / 'attribution' / 'categories' / f'{variable}_{grid}.nc'
-    model_files = [trends_dir / f'{m}.nc' for m in models] if models else sorted(p for p in trends_dir.glob('*.nc') if p.name != 'obs.nc')
-    if not model_files:
-        raise typer.BadParameter(f'No model trend files in {trends_dir}')
+    model_files = [trends_dir / f'{m}.nc' for m in models]
+    missing = [p.name for p in model_files if not p.is_file()]
+    if missing:
+        raise typer.BadParameter(f'Missing trend files in {trends_dir}: {", ".join(missing)}')
 
     obs = read_arrays(trends_dir / 'obs.nc', ['trend', 'end_year', 'lat', 'lon'])
     logger.info('Categorizing %d end years from %d models', len(obs['end_year']), len(model_files))
@@ -95,7 +98,12 @@ def categorize(
     xr.Dataset(
         {'category': (('end_year', 'lat', 'lon'), cats)},
         coords={'end_year': obs['end_year'].astype(int), 'lat': obs['lat'], 'lon': obs['lon']},
-        attrs={'models': ' '.join(p.stem for p in model_files), 'source': str(trends_dir)},
+        attrs={
+            'models': ' '.join(p.stem for p in model_files),
+            'grid': grid,
+            'source': str(trends_dir),
+            'attribution': settings.ATTRIBUTION.model_dump_json(),
+        },
     ).to_netcdf(target)
     logger.info('Wrote categories to %s', target)
 

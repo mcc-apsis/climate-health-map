@@ -5,6 +5,7 @@ vectorised over grid cells and runs. Arrays are (…, lat, lon) with lat ascendi
 """
 
 import re
+from collections import Counter
 from collections.abc import Sequence
 from pathlib import Path
 from typing import TYPE_CHECKING, Annotated, cast
@@ -16,19 +17,6 @@ from climate_health_map.shared import get_logger, load_settings
 
 if TYPE_CHECKING:
     import xarray as xr
-
-MODELS = [
-    'MIROC6',
-    'IPSL-CM6A-LR',
-    'CanESM5',
-    'HadGEM3-GC31-LL',
-    'CNRM-CM6-1',
-    'GFDL-ESM4',
-    'ACCESS-ESM1-5',
-    'BCC-CSM2-MR',
-    'NorESM2-LM',
-    'MRI-ESM2-0',
-]
 
 
 def linear_trend(y: np.ndarray, axis: int = 0) -> np.ndarray:
@@ -114,22 +102,54 @@ def experiment_files(source: Path, variable: str, model: str, experiment: str, g
     return {member_of(p): p for p in paths if re.fullmatch(r'r\d+i\d+p\d+f\d+', member_of(p))}
 
 
-def select_runs(source: Path, variable: str, model: str, scenario: str, grid: str, legacy: bool) -> dict[str, list[list[Path]]]:
-    """File lists per run for all-forcing (historical + scenario), hist-nat and piControl.
+def family_of(label: str) -> str:
+    """Initialisation, physics and forcing indices of a variant label (r3i1p1f2 -> i1p1f2)."""
+    return label[label.index('i') :]
 
-    The default pairs each historical member with the scenario run of the same variant label and drops unpaired ones.
+
+def parent_label(path: Path) -> str:
+    """piControl variant label a run branched from (`parent_variant_label`)."""
+    import netCDF4
+
+    with netCDF4.Dataset(path) as ds:
+        return str(ds.getncattr('parent_variant_label'))
+
+
+def select_runs(source: Path, variable: str, model: str, scenario: str, grid: str, legacy: bool) -> tuple[dict[str, list[list[Path]]], dict[str, list[str]]]:
+    """File lists and variant labels per run for all-forcing (historical + scenario), historical, hist-nat and piControl.
+
+    The default pairs historical and scenario runs by variant label and keeps the family (i, p, f indices) with most pairs,
+    ties going to the lexically first. Historical and hist-nat runs are restricted to that family, and piControl runs are
+    the parents of its historical runs. Labels also list unpaired historical and scenario runs and parents with no file.
     legacy reproduces the old selection: glob `r*1p1f1` and historical i paired with scenario i modulo the scenario count.
     """
     if legacy:
         hist, ssp, hn, pi = (legacy_files(source, variable, model, e, grid) for e in ('historical', scenario, 'hist-nat', 'piControl'))
         af = [[h, ssp[i % len(ssp)]] for i, h in enumerate(hist)] if ssp else []
-        return {'af': af, 'hn': [[p] for p in hn], 'pi': [[p] for p in pi]}
+        return (
+            {'af': af, 'hn': [[p] for p in hn], 'pi': [[p] for p in pi]},
+            {'af': [f'{member_of(h)}+{member_of(s)}' for h, s in af], 'hn': [member_of(p) for p in hn], 'pi': [member_of(p) for p in pi]},
+        )
     hist_m, ssp_m, hn_m, pi_m = (experiment_files(source, variable, model, e, grid) for e in ('historical', scenario, 'hist-nat', 'piControl'))
-    return {
-        'af': [[hist_m[m], ssp_m[m]] for m in sorted(hist_m.keys() & ssp_m.keys())],
-        'hn': [[hn_m[m]] for m in sorted(hn_m)],
-        'pi': [[pi_m[m]] for m in sorted(pi_m)],
+    paired = sorted(hist_m.keys() & ssp_m.keys())
+    labels: dict[str, list[str]] = {k: [] for k in ('af', 'hist', 'hn', 'pi', 'missing_pi')}
+    labels['unpaired'] = sorted(hist_m.keys() ^ ssp_m.keys())
+    if paired:
+        counts = Counter(family_of(m) for m in paired)
+        family = max(sorted(counts), key=counts.__getitem__)
+        labels['af'] = [m for m in paired if family_of(m) == family]
+        labels['hist'] = sorted(m for m in hist_m if family_of(m) == family)
+        labels['hn'] = sorted(m for m in hn_m if family_of(m) == family)
+        parents = {parent_label(hist_m[m]) for m in labels['hist']}
+        labels['pi'] = sorted(parents & pi_m.keys())
+        labels['missing_pi'] = sorted(parents - pi_m.keys())
+    files = {
+        'af': [[hist_m[m], ssp_m[m]] for m in labels['af']],
+        'hist': [[hist_m[m]] for m in labels['hist']],
+        'hn': [[hn_m[m]] for m in labels['hn']],
+        'pi': [[pi_m[m]] for m in labels['pi']],
     }
+    return files, labels
 
 
 def read_annual(path: Path, variable: str) -> 'xr.DataArray':
@@ -192,6 +212,17 @@ def model_trends(runs: 'xr.DataArray', start_year: int, end_year: int) -> np.nda
     return np.asarray(np.nanmean(linear_trend(sel, axis=1), axis=0))
 
 
+def spliced_mean(hist: 'xr.DataArray', af: 'xr.DataArray', baseline: tuple[int, int]) -> 'xr.DataArray':
+    """All-forcing ensemble mean as one run (run, year, …): the mean of all historical runs up to their last year,
+    then the mean of the paired historical + scenario runs plus the difference of the two means over the baseline years."""
+    import xarray as xr
+
+    h, a = hist.mean('run'), af.mean('run')
+    offset = (h - a).sel(year=slice(*baseline)).mean('year')
+    last = int(h['year'].max())
+    return xr.concat([h.sel(year=slice(None, last)), (a + offset).sel(year=slice(last + 1, None))], dim='year').expand_dims(run=1)
+
+
 ERA5_NAMES = {'tas': 't2m', 'pr': 'tp'}
 # ERA5 monthly-mean tp is in m/day; CMIP6 pr is in kg m-2 s-1.
 ERA5_FACTORS = {'tas': 1.0, 'pr': 1000 / 86400}
@@ -205,15 +236,19 @@ def trends(
     ] = None,
     obs: Annotated[Path | None, typer.Option(help='Monthly ERA5 netCDF (default: <DATA_ROOT>/attribution/era5/<variable>.nc)')] = None,
     target: Annotated[Path | None, typer.Option(help='Output directory (default: <DATA_ROOT>/attribution/trends/<variable>_<grid>)')] = None,
-    grid: Annotated[str, typer.Option(help='Grid subdirectory and file suffix of the CMIP6 files (g5 or g025)')] = 'g5',
-    models: Annotated[list[str] | None, typer.Option(help='Models to use (default: the legacy ten)')] = None,
-    scenario: Annotated[str, typer.Option(help='Scenario extending the historical runs')] = 'ssp370',
+    grid: Annotated[str | None, typer.Option(help='Grid subdirectory and file suffix of the CMIP6 files (default: grid in config/attribution.yaml)')] = None,
+    models: Annotated[list[str] | None, typer.Option(help='Models to use (default: models in config/attribution.yaml)')] = None,
+    scenario: Annotated[str | None, typer.Option(help='Scenario extending the historical runs (default: scenario in config/attribution.yaml)')] = None,
     start_year: Annotated[int, typer.Option(help='First year of model trend windows')] = 1951,
-    obs_start_year: Annotated[int, typer.Option(help='First year of observed trend windows and of the variability estimate')] = 1940,
+    obs_start_year: Annotated[
+        int | None, typer.Option(help='First year of observed trend windows and of the variability estimate (default: value in config/attribution.yaml)')
+    ] = None,
     first_end_year: Annotated[int, typer.Option(help='First trend end year')] = 1990,
     latest_year: Annotated[int, typer.Option(help='Last trend end year')] = 2023,
     min_hist_nat: Annotated[int, typer.Option(help='Minimum number of hist-nat runs for a model to be used')] = 3,
     n_samples: Annotated[int, typer.Option(help='Number of resampled piControl segments')] = 50,
+    splice_baseline_start: Annotated[int, typer.Option(help='First year of the baseline aligning paired scenario runs with all historical runs')] = 1995,
+    splice_baseline_end: Annotated[int, typer.Option(help='Last year of the splice baseline')] = 2014,
     legacy: Annotated[bool, typer.Option(help='Reproduce the legacy run selection, piControl window length and unweighted observed annual means')] = False,
     loglevel: Annotated[str, typer.Option(help='Loglevel')] = 'INFO',
 ) -> None:
@@ -222,6 +257,10 @@ def trends(
 
     logger = get_logger('attribution.trends', loglevel=loglevel)
     settings = load_settings(config)
+    grid = grid or settings.ATTRIBUTION.grid
+    scenario = scenario or settings.ATTRIBUTION.scenario
+    obs_start_year = obs_start_year or settings.ATTRIBUTION.obs_start_year
+    models = models or settings.ATTRIBUTION.models
     models_dir = models_dir or settings.DATA_ROOT / 'attribution' / 'legacy' / 'models'
     obs = obs or settings.DATA_ROOT / 'attribution' / 'era5' / f'{variable}.nc'
     target = target or settings.DATA_ROOT / 'attribution' / 'trends' / f'{variable}_{grid}'
@@ -229,18 +268,28 @@ def trends(
     end_years = np.arange(first_end_year, latest_year + 1)
 
     runs = {}
-    for model in models or MODELS:
-        files = select_runs(models_dir, variable, model, scenario, grid, legacy)
+    members = {}
+    for model in models:
+        files, labels = select_runs(models_dir, variable, model, scenario, grid, legacy)
         n = {k: len(v) for k, v in files.items()}
+        if labels.get('unpaired'):
+            logger.info('%s: %d historical or %s runs without a counterpart: %s', model, len(labels['unpaired']), scenario, ' '.join(labels['unpaired']))
+        if labels.get('missing_pi'):
+            logger.warning('%s: piControl parents without a file: %s', model, ' '.join(labels['missing_pi']))
         if n['af'] < 1 or n['hn'] < min_hist_nat or n['pi'] < 1:
             logger.warning('Skipping %s: %s', model, n)
             continue
         logger.info('Loading %s: %s', model, n)
+        af = load_annual(files['af'], variable, obs_start_year, latest_year)
         runs[model] = {
-            'af': load_annual(files['af'], variable, obs_start_year, latest_year),
+            'af': af,
+            'af_mean': af
+            if legacy
+            else spliced_mean(load_annual(files['hist'], variable, obs_start_year, latest_year), af, (splice_baseline_start, splice_baseline_end)),
             'hn': load_annual(files['hn'], variable, obs_start_year, latest_year),
             'pi': load_annual(files['pi'], variable, -(10**6), 10**6),
         }
+        members[model] = labels
     if not runs:
         raise typer.BadParameter(f'No usable models under {models_dir}')
     lat, lon = next(iter(runs.values()))['af']['lat'].values, next(iter(runs.values()))['af']['lon'].values
@@ -257,7 +306,13 @@ def trends(
     xr.Dataset(
         {'trend': (('end_year', 'lat', 'lon'), obs_trends), 'std': (('lat', 'lon'), obs_std)},
         coords=coords,
-        attrs={'source': str(obs), 'start_year': obs_start_year, 'legacy': int(legacy)},
+        attrs={
+            'source': str(obs),
+            'start_year': obs_start_year,
+            'legacy': int(legacy),
+            'grid': grid,
+            'attribution': settings.ATTRIBUTION.model_dump_json(),
+        },
     ).to_netcdf(target / 'obs.nc')
 
     seeds = legacy_seeds(n_samples)
@@ -269,7 +324,7 @@ def trends(
         for year in end_years.tolist():
             window = year - start_year + (0 if legacy else 1)
             samples = resample_trends(dc, window, seeds) * std_corr
-            t_af, t_hn = model_trends(r['af'], start_year, year), model_trends(r['hn'], start_year, year)
+            t_af, t_hn = model_trends(r['af_mean'], start_year, year), model_trends(r['hn'], start_year, year)
             for key, arr in (('trend_af', t_af), ('trend_hn', t_hn), ('resampled_af', samples + t_af), ('resampled_hn', samples + t_hn)):
                 out[key].append(arr)
         hn_last = int(r['hn']['year'].max())
@@ -292,6 +347,12 @@ def trends(
                 'runs_af': len(r['af']['run']),
                 'runs_hn': len(r['hn']['run']),
                 'runs_pi': len(r['pi']['run']),
+                'runs_hist': len(members[model].get('hist', [])),
+                'members_af': ' '.join(members[model]['af']),
+                'members_hist': ' '.join(members[model].get('hist', [])),
+                'members_hn': ' '.join(members[model]['hn']),
+                'members_pi': ' '.join(members[model]['pi']),
+                'splice_baseline': '' if legacy else f'{splice_baseline_start}-{splice_baseline_end}',
                 'hist_nat_last_year': hn_last,
             },
         ).to_netcdf(target / f'{model}.nc')

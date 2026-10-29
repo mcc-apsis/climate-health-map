@@ -15,10 +15,11 @@ import numpy as np
 from scipy.stats import norm
 
 from climate_health_map.attribution.categorize import categorize_all, categorize_trends, read_arrays
+from climate_health_map.shared.config import load_settings
 
 LEGACY = Path('data/attribution/legacy')
 TRENDS = Path('data/attribution/trends/tas_g5_legacy')
-LEGACY_MODELS = ['MIROC6', 'IPSL-CM6A-LR', 'CanESM5', 'GFDL-ESM4', 'ACCESS-ESM1-5', 'BCC-CSM2-MR', 'NorESM2-LM']
+LEGACY_MODELS = load_settings().ATTRIBUTION.models
 END_YEARS = range(1990, 2024)
 
 

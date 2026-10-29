@@ -16,7 +16,6 @@ import typer
 import xarray as xr
 
 from climate_health_map.attribution.trends import (
-    MODELS,
     conservative_regrid,
     drift_corrected,
     era5_annual_means,
@@ -31,6 +30,8 @@ from climate_health_map.attribution.trends import (
 )
 
 LEGACY = Path('data/attribution/legacy')
+# Models with legacy trend files; includes MRI-ESM2-0, which the legacy analysis dropped
+LEGACY_FILES = ['MIROC6', 'IPSL-CM6A-LR', 'CanESM5', 'GFDL-ESM4', 'ACCESS-ESM1-5', 'BCC-CSM2-MR', 'MRI-ESM2-0', 'NorESM2-LM']
 START_YEAR = 1951
 OBS_START_YEAR = 1940
 END_YEARS = range(1990, 2024)
@@ -108,7 +109,7 @@ def main(
     obs: Annotated[bool, typer.Option(help='Check observed trends and observed variability')] = False,
     year: Annotated[list[int] | None, typer.Option(help='End year(s) to check (default: 1990-2023)')] = None,
 ) -> None:
-    models = model or MODELS
+    models = model or LEGACY_FILES
     if obs:
         check_obs(models)
         return

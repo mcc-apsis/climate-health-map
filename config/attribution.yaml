@@ -1,0 +1,14 @@
+# Attribution decisions. Committed so that changes appear in review and outputs can be traced to them.
+# The reasons for each value are in Documentation/Attribution.md.
+ATTRIBUTION:
+  models:
+    - MIROC6
+    - IPSL-CM6A-LR
+    - CanESM5
+    - GFDL-ESM4
+    - ACCESS-ESM1-5
+    - BCC-CSM2-MR
+    - NorESM2-LM
+  grid: g5
+  scenario: ssp370
+  obs_start_year: 1940

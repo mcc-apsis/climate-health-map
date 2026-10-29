@@ -10,6 +10,7 @@ dependencies = [
     "tabulate==0.10.0",
     "matplotlib==3.11.0",
     "lithub[export]",
+    "pyyaml==6.0.3",
 ]
 
 [project.optional-dependencies]

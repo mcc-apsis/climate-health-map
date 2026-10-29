@@ -550,6 +550,7 @@ dependencies = [
     { name = "lithub", extra = ["export"] },
     { name = "matplotlib" },
     { name = "nacsos-data", extra = ["scripts", "utils"] },
+    { name = "pyyaml" },
     { name = "tabulate" },
     { name = "xlsxwriter" },
 ]
@@ -621,6 +622,7 @@ requires-dist = [
     { name = "netcdf4", marker = "extra == 'analysis'", specifier = ">=1.7.0" },
     { name = "nltk", marker = "extra == 'classify'", specifier = "==3.9.4" },
     { name = "optuna", marker = "extra == 'classify'", specifier = "==4.9.0" },
+    { name = "pyyaml", specifier = "==6.0.3" },
     { name = "rioxarray", marker = "extra == 'analysis'", specifier = ">=0.18.0" },
     { name = "scipy", marker = "extra == 'analysis'", specifier = ">=1.14.0" },
     { name = "seaborn", marker = "extra == 'notebook'", specifier = "==0.13.2" },

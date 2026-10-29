@@ -1,8 +1,129 @@
-# Attribution (climate trends)
+# Attribution of grid-cell temperature trends
 
-Grid-cell human-attributable change in climate drivers (temperature and precipitation).
+## Methods
 
-## Commands
+The method follows the grid-cell trend assessments of Knutson et al. (2013) for temperature and Knutson and Zeng (2018) for precipitation,
+as applied with CMIP6 models in Callaghan et al. (2021).
+
+### Data
+
+Observed near-surface air temperature is taken from the ERA5 reanalysis (Hersbach et al., 2020),
+using monthly means for 1940–2023 from the Copernicus Climate Data Store.
+Annual means are computed with each month weighted by its length,
+and are regridded to a regular 5° grid (72 × 36 cells) with an area-conservative scheme.
+
+Simulated near-surface air temperature is taken from four CMIP6 experiments (Eyring et al., 2016).
+These are historical simulations with all forcings (1850–2014),
+their continuation under the SSP3-7.0 scenario (ssp370, from 2015),
+historical simulations with natural forcings only (hist-nat, from DAMIP; Gillett et al., 2016),
+and pre-industrial control simulations (piControl).
+Annual means are taken from CMIP6-ng (Brunner et al., 2020)
+and conservatively remapped from its 2.5° grid to the 5° grid.
+
+### Models and runs
+
+Each simulation run is identified by its variant label,
+which combines realisation, initialisation, physics and forcing indices (for example r1i1p1f1).
+Historical and ssp370 runs are paired by variant label,
+so each all-forcing series continues the same run across 2014/2015.
+Within a model, only one variant family (one combination of initialisation, physics and forcing indices) is used.
+This is the family with the most paired runs.
+Historical and hist-nat runs are restricted to that family.
+The piControl runs are those from which the selected historical runs branched,
+as recorded in their `parent_variant_label` metadata.
+
+A model is used if it provides at least one paired all-forcing run, at least three hist-nat runs and a piControl run.
+Seven models are used:
+
+| Model | Paired historical + ssp370 | Historical | hist-nat | piControl |
+|---|---|---|---|---|
+| ACCESS-ESM1-5 | 40 | 40 | 3 | 1 |
+| BCC-CSM2-MR | 1 | 3 | 3 | 1 |
+| CanESM5 | 25 | 25 | 25 | 1 |
+| GFDL-ESM4 | 1 | 3 | 3 | 1 |
+| IPSL-CM6A-LR | 11 | 33 | 10 | 1 |
+| MIROC6 | 3 | 50 | 50 | 1 |
+| NorESM2-LM | 1 | 3 | 3 | 1 |
+
+Several models have many more historical runs than ssp370 continuations.
+To use all historical runs, the all-forcing ensemble mean of each model is formed in two parts.
+Up to 2014 it is the mean of all historical runs of the selected family.
+From 2015 it is the mean of the paired ssp370 runs,
+shifted by the difference between the mean of all historical runs and the mean of the paired historical runs over 1995–2014.
+The ensemble size underlying the mean therefore does not change at 2015,
+and the 2015 continuation is aligned with the full historical ensemble.
+The natural-only ensemble mean is the mean of the hist-nat runs.
+
+### Trends
+
+Linear trends are ordinary least-squares slopes, expressed per century.
+They are computed for each end year Y from 1990 to 2023.
+Model trends cover 1951–Y and are computed from the all-forcing and natural-only ensemble means of each model.
+The hist-nat simulations end in 2020,
+so natural-only trends for end years 2021–2023 cover 1951–2020.
+Observed trends cover 1940–Y.
+
+### Internal variability
+
+Internal variability is estimated from the piControl simulations.
+In each piControl run, a linear fit is subtracted from every grid cell to remove model drift,
+and the drift-corrected runs of a model are averaged.
+For each end year, 50 segments with the length of the model trend window (Y − 1951 + 1 years)
+are drawn at random start years from the drift-corrected control,
+and the linear trend of each segment is computed.
+
+The resampled trends are scaled so that the model's variability matches the observed variability in each cell.
+Observed variability is the standard deviation over time of 7-year running means of the observed annual series for 1940–2023,
+after subtracting the mean of all all-forcing runs of all models.
+Model variability is the same statistic computed from the piControl series.
+The scaling factor is the ratio of observed to model variability.
+In both statistics, the last six running means are left out.
+
+For each model and end year, the all-forcing distribution consists of the 50 scaled control trends added to the model's all-forcing trend,
+and the natural-only distribution consists of the same 50 trends added to its natural-only trend.
+The distributions of all models are pooled with equal weight, giving 350 samples each.
+
+### Attribution categories
+
+A normal distribution is fitted to each pooled distribution (by its sample mean and standard deviation).
+The observed trend of each cell and end year is placed on both distributions as percentiles,
+p_AF for the all-forcing distribution and p_NAT for the natural-only distribution.
+For positive (warming) trends, the first of the following rules that applies gives the category:
+
+1. 0 if 5 < p_AF < 95 and p_NAT ≤ 96: consistent with all forcings and not distinguishable from natural forcing.
+2. 2 if 5 < p_AF < 95 (and p_NAT > 96): consistent with all forcings and outside the natural-only range.
+3. 0 if 5 < p_NAT < 95: consistent with natural forcing only.
+4. 1 if p_AF ≤ 5 and p_NAT ≥ 95: weaker than the all-forcing distribution and stronger than the natural-only distribution.
+5. 3 if p_AF ≥ 95: stronger than the all-forcing distribution.
+6. 0 if p_NAT ≤ 5: weaker than the natural-only distribution.
+
+Negative (cooling) trends are categorised by the mirrored rules,
+with categories −1, −2 and −3 and a natural-forcing cut-off at the 4th percentile.
+Cells with a zero observed trend or missing inputs have no category.
+
+### References
+
+- Brunner, L., Hauser, M., Lorenz, R. and Beyerle, U. (2020). The ETH Zurich CMIP6 next generation archive: technical documentation. Zenodo. https://doi.org/10.5281/zenodo.3734128
+- Callaghan, M. et al. (2021). Machine-learning-based evidence and attribution mapping of 100,000 climate impact studies. Nature Climate Change, 11, 966–972.
+- Eyring, V. et al. (2016). Overview of the Coupled Model Intercomparison Project Phase 6 (CMIP6) experimental design and organization. Geoscientific Model Development, 9, 1937–1958.
+- Gillett, N. P. et al. (2016). The Detection and Attribution Model Intercomparison Project (DAMIP v1.0) contribution to CMIP6. Geoscientific Model Development, 9, 3685–3697.
+- Hersbach, H. et al. (2020). The ERA5 global reanalysis. Quarterly Journal of the Royal Meteorological Society, 146, 1999–2049.
+- Knutson, T. R. and Zeng, F. (2018). Model assessment of observed precipitation trends over land regions: detectable human influences and possible low bias in model trends. Journal of Climate, 31, 4617–4637.
+- Knutson, T. R., Zeng, F. and Wittenberg, A. T. (2013). Multimodel assessment of regional surface temperature trends: CMIP3 and CMIP5 twentieth-century simulations. Journal of Climate, 26, 8709–8743.
+
+## Open decisions
+
+- Observed trends start in 1940 and model trends in 1951.
+- Observed variability is computed against a mean pooled over all all-forcing runs of all models, so models are weighted by their number of runs.
+- The trimming of the last six running means in the variability estimate.
+- Adding CNRM-CM6-1, which meets the selection criteria (6 paired runs, 10 hist-nat runs) but is not in the model list.
+- HadGEM3-GC31-LL, which has no ssp370 runs in the current inputs, pending ESGF.
+- The 2.5° grid and retrieval of its inputs from ESGF.
+- ssp245 as scenario, for which `ssp245-nat` exists for only four models.
+- A categorisation test for precipitation, whose trends are typically not normally distributed.
+  The trend pipeline runs for `pr`, and `categorize` accepts only `tas`.
+
+## Implementation
 
 ```bash
 healthmap attribution download     # ERA5 + CMIP6 (g5) inputs for tas and pr
@@ -11,19 +132,33 @@ healthmap attribution categorize   # per-cell attribution category
 healthmap attribution export-grid  # per-(cell, year) attribution grid CSV
 ```
 
-## xesmf / ESMF
+Decisions are recorded in this document and in `config/attribution.yaml`, which is read through `settings.ATTRIBUTION`.
+The configuration holds the model list, grid (`g5`), scenario (`ssp370`) and observation start year (1940).
+Other parameters are defaults of `trends`: trend start year 1951, end years 1990–2023, at least three hist-nat runs,
+50 resampled segments drawn with seed 2023, and the 1995–2014 splice baseline.
+The category thresholds are keyword defaults of `categorize_trends`.
+A change to a decision updates this document in the same commit as the code that depends on it.
 
-Regridding uses `xesmf`, which depends on the ESMF C library (`esmpy`). This does not install cleanly
-via pip/uv on all machines, so it is kept out of the `analysis` extra; install it via conda-forge:
+`trends` writes one netCDF file per model and `obs.nc` to `data/attribution/trends/<variable>_<grid>`.
+Each model file records its selected variant labels in the attributes `members_af`, `members_hist`, `members_hn` and `members_pi`.
+Unpaired runs and piControl parents without a file are logged.
 
-```bash
-conda install -c conda-forge esmpy xesmf
-```
+## Legacy code
 
-Let `esmpy` discover ESMF at runtime rather than setting `ESMFMKFILE` by hand.
+The method is a port of the analysis in
+[mcc-apsis/climate-trend-attribution](https://gitlab.pik-potsdam.de/mcc-apsis/climate-trend-attribution)
+(`resample_trends.py` and `explore.ipynb`), whose inputs and outputs are copied to `data/attribution/legacy`.
+`trends --legacy` reproduces that analysis.
+It differs from the method above in four respects:
 
-## Precipitation
+- Runs are selected with the file pattern `r*1p1f1`, which excludes CNRM-CM6-1 (`p1f2`), HadGEM3-GC31-LL (`p1f3`) and the `p2` family of CanESM5.
+- Historical runs are paired with ssp370 runs by list position, so most all-forcing series join two different runs at 2014/2015.
+  piControl and hist-nat runs are not restricted to a family.
+- Resampled piControl segments are one year shorter than the model trend window.
+- Observed annual means weight all months equally.
 
-The precipitation pipeline reuses the temperature one over the `pr` variable. Categorization fits
-normal distributions to trend samples; precipitation trends are typically non-normal and need a
-distribution-appropriate treatment.
+The legacy analysis also regridded ERA5 with xesmf, and its observed trends differ from the port by up to 0.027 °C per century.
+It dropped MRI-ESM2-0 by removing the last model of its list.
+
+`scripts/validate_legacy_trends.py` checks the port against the legacy outputs.
+`trends --legacy --obs data/attribution/legacy/data/temp.nc` reproduces `data/attribution/trends/tas_g5_legacy`.

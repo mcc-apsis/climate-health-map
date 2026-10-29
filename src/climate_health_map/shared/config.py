@@ -2,9 +2,19 @@ import os
 from typing import Any
 from pathlib import Path
 
-from pydantic_settings import BaseSettings, SettingsConfigDict
+from pydantic import BaseModel
+from pydantic_settings import BaseSettings, PydanticBaseSettingsSource, SettingsConfigDict, YamlConfigSettingsSource
 
 from nacsos_data.util.conf import OpenAlexConfig, DatabaseConfig
+
+
+class AttributionConfig(BaseModel):
+    """Attribution decisions read from the committed YAML file."""
+
+    models: list[str]
+    grid: str
+    scenario: str
+    obs_start_year: int
 
 
 class Settings(BaseSettings):
@@ -28,12 +38,28 @@ class Settings(BaseSettings):
     # Root of the (git-ignored) data tree synced via rsync (see Documentation/DataRetrieval.md)
     DATA_ROOT: Path = Path('data')
 
+    # Committed attribution decisions, read from config/attribution.yaml (see Documentation/Attribution.md)
+    ATTRIBUTION: AttributionConfig
+
     model_config = SettingsConfigDict(
         case_sensitive=True,
         env_prefix='NACSOS_',
         env_nested_delimiter='__',
         extra='allow',
+        yaml_file='config/attribution.yaml',
     )
+
+    @classmethod
+    def settings_customise_sources(
+        cls,
+        settings_cls: type[BaseSettings],
+        init_settings: PydanticBaseSettingsSource,
+        env_settings: PydanticBaseSettingsSource,
+        dotenv_settings: PydanticBaseSettingsSource,
+        file_secret_settings: PydanticBaseSettingsSource,
+    ) -> tuple[PydanticBaseSettingsSource, ...]:
+        # Source order: attribution YAML, init, environment, env file, secrets
+        return (YamlConfigSettingsSource(settings_cls), init_settings, env_settings, dotenv_settings, file_secret_settings)
 
 
 def load_settings(conf_file: Path | str | None = None) -> Settings:
