@@ -74,7 +74,7 @@ def unit_check(n_cells: int = 3000) -> None:
     obs = af.mean(axis=0) + af.std(axis=0) * norm.ppf(u)
 
     legacy = np.array([legacy_category(af[:, c], hn[:, c], obs[c]) for c in range(n_cells)])
-    new = categorize_trends(obs[None], af[:, None, :], hn[:, None, :])[0]
+    new = categorize_trends(obs[None], af[:, None, :], hn[:, None, :], legacy=True)[0]
     np.testing.assert_array_equal(new, legacy)
     values, counts = np.unique(legacy[~np.isnan(legacy)], return_counts=True)
     print(f'unit: {n_cells} cells match the notebook function; counts {dict(zip(values.tolist(), counts.tolist(), strict=True))}')
@@ -83,7 +83,7 @@ def unit_check(n_cells: int = 3000) -> None:
 def pickle_check(obs_trend: np.ndarray, label: str) -> None:
     with open(LEGACY / 'data/attribution.pickle', 'rb') as f:
         legacy = pickle.load(f)
-    cats = categorize_all(obs_trend, [TRENDS / f'{m}.nc' for m in LEGACY_MODELS])
+    cats = categorize_all(obs_trend, [TRENDS / f'{m}.nc' for m in LEGACY_MODELS], legacy=True)
 
     mismatched, total = 0, 0
     pairs: Counter[tuple[float, float]] = Counter()

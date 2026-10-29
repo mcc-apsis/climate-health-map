@@ -101,18 +101,37 @@ following Knutson and Zeng (2018) and Callaghan et al. (2021).
 The observed percentile is interpolated linearly between the averaged percentiles.
 The observed trend of each cell and end year is placed on both distributions as percentiles,
 p_AF for the all-forcing distribution and p_NAT for the natural-only distribution.
-For positive (warming) trends, the first of the following rules that applies gives the category:
+The sign of the all-forcing mean gives the expected direction of change.
+A trend is detectable if it lies beyond the natural-only range in its own direction (p_NAT ≥ 95 for a positive trend, p_NAT ≤ 5 for a negative one).
+Categories are assigned as follows, with the sign of the observed trend:
 
-1. 0 if 5 < p_AF < 95 and p_NAT ≤ 96: consistent with all forcings and not distinguishable from natural forcing.
-2. 2 if 5 < p_AF < 95 (and p_NAT > 96): consistent with all forcings and outside the natural-only range.
-3. 0 if 5 < p_NAT < 95: consistent with natural forcing only.
-4. 1 if p_AF ≤ 5 and p_NAT ≥ 95: weaker than the all-forcing distribution and stronger than the natural-only distribution.
-5. 3 if p_AF ≥ 95: stronger than the all-forcing distribution.
-6. 0 if p_NAT ≤ 5: weaker than the natural-only distribution.
+- 0: the trend is not detectable, including trends within the natural-only range and trends in the direction opposite to a natural-only range that it lies beyond.
+- ±4: the trend is detectable and has the opposite sign to the all-forcing mean.
+- ±3: the trend is detectable, has the sign of the all-forcing mean and is stronger than the all-forcing range (p_AF ≥ 95 for a warming trend).
+- ±2: the trend is detectable, has the sign of the all-forcing mean and lies within the all-forcing range (5 < p_AF < 95).
+- ±1: the trend is detectable, has the sign of the all-forcing mean and is weaker than the all-forcing range (p_AF ≤ 5 for a warming trend).
 
-Negative (cooling) trends are categorised by the mirrored rules,
-with categories −1, −2 and −3 and a natural-forcing cut-off at the 4th percentile.
-Cells with a zero observed trend or missing inputs have no category.
+Categories ±2 and ±3 are attributable in part to human influence.
+Cells with a zero observed trend, a zero all-forcing mean or missing inputs have no category.
+A trend that would be ±3 must also be closer to the all-forcing mean than to the natural-only mean,
+and is otherwise ±1 (Knutson and Zeng, 2018).
+`--no-closer` omits this condition.
+`--legacy` assigns the categories of the legacy code, which takes the sign from the observed trend, has no category ±4
+and requires p_NAT > 96 (positive) or p_NAT < 4 (negative) for category ±2.
+
+Effect of the category rules, as the area share of cells in categories ±2 or ±3 (area-weighted by latitude):
+
+| Variable | End year | Legacy | Without closer condition | Current |
+|---|---|---|---|---|
+| tas | 1990 | 29.7% | 32.4% | 32.4% |
+| tas | 2023 | 82.4% | 83.6% | 83.6% |
+| pr | 1990 | 13.3% | 9.1% | 8.6% |
+| pr | 2023 | 38.3% | 31.3% | 30.3% |
+
+For precipitation 5.7% (1990) and 8.7% (2023) of the area is category ±4, which the legacy rules counted as ±3 (and in part as ±2).
+For temperature, category ±4 covers 0.6% of the area in 1990 and none in 2023.
+The legacy cut-off of 96 instead of 95 for p_NAT lowers the temperature share by 3.4 percentage points in 1990 (29.7% against 33.1%).
+The closer condition changes 0.6% of the precipitation cells over all end years and no temperature cells.
 
 ### References
 
@@ -134,11 +153,11 @@ Cells with a zero observed trend or missing inputs have no category.
 - The 2.5° grid and retrieval of its inputs from ESGF.
 - ssp245 as scenario, for which `ssp245-nat` exists for only four models.
 - Temperature uses the pooled distribution of Knutson et al. (2013) and Callaghan et al. (2021), and precipitation the average distribution. Both papers give this split.
-- The category rules differ from Callaghan et al. (2021) and Knutson and Zeng (2018) in three respects:
-  there is no category ±4 (observed trend outside the natural-only range with the opposite sign to the all-forcing mean),
-  the sign is taken from the observed trend and not from the all-forcing mean,
-  and Knutson and Zeng additionally require an attributable trend to be closer to the all-forcing than to the natural-only mean.
-  The 96th and 4th percentile cut-offs for the natural-only distribution are inherited from the legacy code.
+- The closer-to-the-all-forcing-mean condition of Knutson and Zeng (2018) is applied, although Callaghan et al. (2021) do not state it.
+  It changes the attributable share by at most one percentage point.
+  The category given to trends failing the condition (±1) is an interpretation.
+- The category rules follow the text of Callaghan et al. (2021) and not their legacy code, which has no category ±4 and uses a 96th percentile cut-off.
+  Whether the published precipitation map was produced with the legacy rules is not checked.
 - ERA5 precipitation variability is larger than modelled variability in most cells (median scaling factor 1.2 to 1.4, up to 20),
   whereas Callaghan et al. (2021) find models overestimating variability against GPCC.
 - ERA5 covers the oceans, so precipitation categories are assigned there too, where Knutson and Zeng use land-only GPCC.
@@ -156,7 +175,7 @@ Decisions are recorded in this document and in `config/attribution.yaml`, which 
 The configuration holds the model list, grid (`g5`), scenario (`ssp370`) and observation start year (1940).
 Other parameters are defaults of `trends`: trend start year 1951, end years 1990–2023, at least three hist-nat runs,
 50 resampled segments drawn with seed 2023, and the 1995–2014 splice baseline.
-The category thresholds are keyword defaults of `assign_categories`.
+The category tail (5%) is a keyword default of `assign_categories`.
 `trends --variable pr --grid g025` writes to `data/attribution/trends/pr_g025`,
 and `categorize --variable pr --grid g025` writes `data/attribution/categories/pr_g025.nc`,
 whose `distribution` attribute records the distribution used.
