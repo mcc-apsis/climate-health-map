@@ -13,7 +13,7 @@ from typing import TYPE_CHECKING, Annotated, cast
 import numpy as np
 import typer
 
-from climate_health_map.attribution.provenance import clear_provenance, trends_dir, used_settings, write_provenance
+from climate_health_map.attribution.provenance import clear_provenance, era5_path, trends_dir, used_settings, write_provenance
 from climate_health_map.shared import get_logger, load_settings
 
 if TYPE_CHECKING:
@@ -231,7 +231,7 @@ def trends(
     start_year, first_end_year, latest_year, min_hist_nat, n_samples = cfg.start_year, cfg.first_end_year, cfg.latest_year, cfg.min_hist_nat, cfg.n_samples
     splice_baseline_start, splice_baseline_end = cfg.splice_baseline_start, cfg.splice_baseline_end
     models_dir = settings.DATA_ROOT / 'attribution' / 'cmip6'
-    obs = settings.DATA_ROOT / 'attribution' / 'era5' / f'{variable}.nc'
+    obs = era5_path(settings, variable)
     target = trends_dir(settings, variable)
     target.mkdir(parents=True, exist_ok=True)
     clear_provenance(target)

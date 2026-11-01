@@ -18,6 +18,11 @@ class StaleOutputError(RuntimeError):
     """An attribution output is missing its provenance or was generated with settings that differ from the current ones."""
 
 
+def era5_path(settings: Settings, variable: str) -> Path:
+    """Monthly ERA5 file of a variable."""
+    return Path(settings.DATA_ROOT) / 'attribution' / 'era5' / f'{variable}.nc'
+
+
 def trends_dir(settings: Settings, variable: str) -> Path:
     """Directory of the trend files of a variable on the grid of the settings."""
     return Path(settings.DATA_ROOT) / 'attribution' / 'trends' / f'{variable}_{settings.ATTRIBUTION.grid}'

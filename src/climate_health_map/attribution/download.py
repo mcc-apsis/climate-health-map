@@ -3,6 +3,7 @@ from typing import Annotated
 
 import typer
 
+from climate_health_map.attribution.provenance import era5_path
 from climate_health_map.shared import get_logger, load_settings
 
 # ERA5 CDS variable names keyed by the short variable code used across the attribution pipeline.
@@ -15,12 +16,9 @@ ERA5_VARIABLES: dict[str, str] = {
 def download_climate_data(
     config: Annotated[Path | None, typer.Option(help='Path to config file (default: $CH_CONFIG or config/default.env)')] = None,
     variable: Annotated[str, typer.Option(help='Climate variable to retrieve (tas or pr)')] = 'tas',
-    start_year: Annotated[int, typer.Option(help='First year of ERA5 observations to retrieve')] = 1940,
-    latest_year: Annotated[int, typer.Option(help='Last year of ERA5 observations to retrieve')] = 2023,
-    target: Annotated[Path | None, typer.Option(help='Target netCDF file (default: <DATA_ROOT>/attribution/era5/<variable>.nc)')] = None,
     loglevel: Annotated[str, typer.Option(help='Loglevel')] = 'INFO',
 ) -> None:
-    """Download ERA5 monthly-mean reanalysis for the given variable from the Copernicus CDS.
+    """Download ERA5 monthly-mean reanalysis for the given variable from the Copernicus CDS, for the years from obs_start_year to latest_year of the settings.
 
     Requires CDS API credentials in ~/.cdsapirc (see https://cds.climate.copernicus.eu/api-how-to).
     """
@@ -32,8 +30,8 @@ def download_climate_data(
     if variable not in ERA5_VARIABLES:
         raise typer.BadParameter(f'variable must be one of {sorted(ERA5_VARIABLES)}')
 
-    if target is None:
-        target = settings.DATA_ROOT / 'attribution' / 'era5' / f'{variable}.nc'
+    start_year, latest_year = settings.ATTRIBUTION.obs_start_year, settings.ATTRIBUTION.latest_year
+    target = era5_path(settings, variable)
     target.parent.mkdir(parents=True, exist_ok=True)
 
     logger.info('Downloading ERA5 %s (%s) %d-%d to %s', variable, ERA5_VARIABLES[variable], start_year, latest_year, target)
