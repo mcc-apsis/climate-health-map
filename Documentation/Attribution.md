@@ -3,26 +3,24 @@
 ## Methods
 
 The method follows the grid-cell trend assessments of Knutson et al. (2013) for temperature and Knutson and Zeng (2018) for precipitation,
-as applied with CMIP6 models in Callaghan et al. (2021).
+as applied with CMIP6 models in Callaghan et al. (2021). 
+In contrast to each of these, it uses re-analysis data from ERA5 for observed trends.
 
 ### Data
 
 Observed near-surface air temperature is taken from the ERA5 reanalysis (Hersbach et al., 2020),
 using monthly means for 1940–2023 from the Copernicus Climate Data Store.
 Annual means are computed with each month weighted by its length,
-and are regridded to a regular 5° grid (72 × 36 cells) with an area-conservative scheme.
+and are regridded to the regular 2.5° grid of the CMIP6-ng files (72 × 144 cells) with an area-conservative scheme.
 
 Simulated near-surface air temperature is taken from four CMIP6 experiments (Eyring et al., 2016).
 These are historical simulations with all forcings (1850–2014),
 their continuation under the SSP3-7.0 scenario (ssp370, from 2015),
 historical simulations with natural forcings only (hist-nat, from DAMIP; Gillett et al., 2016),
 and pre-industrial control simulations (piControl).
-Annual means are taken from CMIP6-ng (Brunner et al., 2020)
-and conservatively remapped from its 2.5° grid to the 5° grid.
+Annual means are taken from CMIP6-ng (Brunner et al., 2020) on its 2.5° grid.
 
-Precipitation uses ERA5 total precipitation (converted from m/day to kg m⁻² s⁻¹)
-and the CMIP6-ng `pr` files, both on the 2.5° grid (72 × 144 cells).
-CMIP6-ng provides `pr` only on that grid, so the observations are regridded to it.
+Precipitation uses ERA5 total precipitation (converted from m/day to kg m⁻² s⁻¹) and the CMIP6-ng `pr` files on the same grid.
 The same experiments, models, run selection and trend method are used as for temperature.
 Precipitation trends are absolute (kg m⁻² s⁻¹ per century), as in Knutson and Zeng (2018),
 who report absolute trends and mask cells only by observational data coverage.
@@ -115,23 +113,8 @@ Categories ±2 and ±3 are attributable in part to human influence.
 Cells with a zero observed trend, a zero all-forcing mean or missing inputs have no category.
 A trend that would be ±3 must also be closer to the all-forcing mean than to the natural-only mean,
 and is otherwise ±1 (Knutson and Zeng, 2018).
-`--no-closer` omits this condition.
-`--legacy` assigns the categories of the legacy code, which takes the sign from the observed trend, has no category ±4
-and requires p_NAT > 96 (positive) or p_NAT < 4 (negative) for category ±2.
 
-Effect of the category rules, as the area share of cells in categories ±2 or ±3 (area-weighted by latitude):
-
-| Variable | End year | Legacy | Without closer condition | Current |
-|---|---|---|---|---|
-| tas | 1990 | 29.7% | 32.4% | 32.4% |
-| tas | 2023 | 82.4% | 83.6% | 83.6% |
-| pr | 1990 | 13.3% | 9.1% | 8.6% |
-| pr | 2023 | 38.3% | 31.3% | 30.3% |
-
-For precipitation 5.7% (1990) and 8.7% (2023) of the area is category ±4, which the legacy rules counted as ±3 (and in part as ±2).
-For temperature, category ±4 covers 0.6% of the area in 1990 and none in 2023.
-The legacy cut-off of 96 instead of 95 for p_NAT lowers the temperature share by 3.4 percentage points in 1990 (29.7% against 33.1%).
-The closer condition changes 0.6% of the precipitation cells over all end years and no temperature cells.
+Category ±4 covers 5.7% (1990) and 8.7% (2023) of the precipitation area, and 0.6% (1990) and none (2023) of the temperature area (latitude-weighted).
 
 ### References
 
@@ -150,14 +133,13 @@ The closer condition changes 0.6% of the precipitation cells over all end years 
 - The trimming of the last six running means in the variability estimate.
 - Adding CNRM-CM6-1, which meets the selection criteria (6 paired runs, 10 hist-nat runs) but is not in the model list.
 - HadGEM3-GC31-LL, which has no ssp370 runs in the current inputs, pending ESGF.
-- The 2.5° grid and retrieval of its inputs from ESGF.
+- Both variables use the 2.5° grid, the only grid of the precipitation inputs. For temperature, the 2.5° attributable share (categories ±2 and ±3) is 0.5 to 3 percentage points lower than on 5° (2020: 79.2% against 80.4% globally and 86.5% against 87.5% on land), and 90–95% of cells have the same category on both grids. A return to 5° requires regridding the precipitation inputs. Retrieval of the 2.5° inputs from ESGF is open.
 - ssp245 as scenario, for which `ssp245-nat` exists for only four models.
 - Temperature uses the pooled distribution of Knutson et al. (2013) and Callaghan et al. (2021), and precipitation the average distribution. Both papers give this split.
 - The closer-to-the-all-forcing-mean condition of Knutson and Zeng (2018) is applied, although Callaghan et al. (2021) do not state it.
-  It changes the attributable share by at most one percentage point.
   The category given to trends failing the condition (±1) is an interpretation.
-- The category rules follow the text of Callaghan et al. (2021) and not their legacy code, which has no category ±4 and uses a 96th percentile cut-off.
-  Whether the published precipitation map was produced with the legacy rules is not checked.
+- The category rules follow the text of Callaghan et al. (2021).
+  Whether their published precipitation map follows the same rules is not checked.
 - ERA5 precipitation variability is larger than modelled variability in most cells (median scaling factor 1.2 to 1.4, up to 20),
   whereas Callaghan et al. (2021) find models overestimating variability against GPCC.
 - ERA5 covers the oceans, so precipitation categories are assigned there too, where Knutson and Zeng use land-only GPCC.
@@ -165,19 +147,19 @@ The closer condition changes 0.6% of the precipitation cells over all end years 
 ## Implementation
 
 ```bash
-healthmap attribution download     # ERA5 + CMIP6 (g5) inputs for tas and pr
-healthmap attribution trends       # drift-corrected trends + resampling
-healthmap attribution categorize   # per-cell attribution category (add --variable pr --grid g025 for precipitation)
+healthmap attribution download     # ERA5 monthly means of tas or pr (--variable)
+healthmap attribution trends       # drift-corrected trends + resampling (--variable tas or pr)
+healthmap attribution categorize   # per-cell attribution category (--variable tas or pr)
 healthmap attribution export-grid  # per-(cell, year) attribution grid CSV
 ```
 
 Decisions are recorded in this document and in `config/attribution.yaml`, which is read through `settings.ATTRIBUTION`.
-The configuration holds the model list, grid (`g5`), scenario (`ssp370`) and observation start year (1940).
-Other parameters are defaults of `trends`: trend start year 1951, end years 1990–2023, at least three hist-nat runs,
-50 resampled segments drawn with seed 2023, and the 1995–2014 splice baseline.
+The configuration holds the model list, grid (`g025`), scenario (`ssp370`), observation start year (1940),
+trend start year (1951), first and last end year (1990 and 2023), minimum number of hist-nat runs (3),
+number of resampled segments (50) with seed 2023, and the splice baseline (1995–2014).
 The category tail (5%) is a keyword default of `assign_categories`.
-`trends --variable pr --grid g025` writes to `data/attribution/trends/pr_g025`,
-and `categorize --variable pr --grid g025` writes `data/attribution/categories/pr_g025.nc`,
+`trends --variable pr` writes to `data/attribution/trends/pr_g025`,
+and `categorize --variable pr` writes `data/attribution/categories/pr_g025.nc`,
 whose `distribution` attribute records the distribution used.
 A change to a decision updates this document in the same commit as the code that depends on it.
 
@@ -185,22 +167,16 @@ A change to a decision updates this document in the same commit as the code that
 Each model file records its selected variant labels in the attributes `members_af`, `members_hist`, `members_hn` and `members_pi`.
 Unpaired runs and piControl parents without a file are logged.
 
-## Legacy code
+### Provenance
 
-The method is a port of the analysis in
-[mcc-apsis/climate-trend-attribution](https://gitlab.pik-potsdam.de/mcc-apsis/climate-trend-attribution)
-(`resample_trends.py` and `explore.ipynb`), whose inputs and outputs are copied to `data/attribution/legacy`.
-`trends --legacy` reproduces that analysis.
-It differs from the method above in four respects:
+The variable and grid are part of the output path (`trends/<variable>_<grid>`, `categories/<variable>_<grid>.nc`).
+The other settings that shape an output are all other fields of `ATTRIBUTION` in the configuration.
+`trends` writes them to `provenance.json` in its output directory,
+and `categorize` writes `<variable>_<grid>.provenance.json` next to its output, with the provenance of the trend files it read.
+A sidecar is removed when a run starts and written when it ends, so an interrupted run leaves none.
 
-- Runs are selected with the file pattern `r*1p1f1`, which excludes CNRM-CM6-1 (`p1f2`), HadGEM3-GC31-LL (`p1f3`) and the `p2` family of CanESM5.
-- Historical runs are paired with ssp370 runs by list position, so most all-forcing series join two different runs at 2014/2015.
-  piControl and hist-nat runs are not restricted to a family.
-- Resampled piControl segments are one year shorter than the model trend window.
-- Observed annual means weight all months equally.
-
-The legacy analysis also regridded ERA5 with xesmf, and its observed trends differ from the port by up to 0.027 °C per century.
-It dropped MRI-ESM2-0 by removing the last model of its list.
-
-`scripts/validate_legacy_trends.py` checks the port against the legacy outputs.
-`trends --legacy --obs data/attribution/legacy/data/temp.nc` reproduces `data/attribution/trends/tas_g5_legacy`.
+`categorize` checks the provenance of the trend files against the current settings and stops if it is missing or differs.
+The recorded and expected models must be the same set, because the observed variability that scales the resampled trends of every model is computed from the mean over all models.
+All other settings must be equal.
+Other code that reads outputs derives the path with `trends_dir` or `categories_path` and calls `check_provenance` with `used_settings(settings)`,
+which raises `StaleOutputError` with the command that regenerates the output.

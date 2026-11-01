@@ -9,6 +9,14 @@ ATTRIBUTION:
     - ACCESS-ESM1-5
     - BCC-CSM2-MR
     - NorESM2-LM
-  grid: g5
+  grid: g025
   scenario: ssp370
   obs_start_year: 1940
+  start_year: 1951
+  first_end_year: 1990
+  latest_year: 2023
+  min_hist_nat: 3
+  n_samples: 50
+  seed: 2023
+  splice_baseline_start: 1995
+  splice_baseline_end: 2014

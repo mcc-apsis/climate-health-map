@@ -14,7 +14,15 @@ class AttributionConfig(BaseModel):
     models: list[str]
     grid: str
     scenario: str
-    obs_start_year: int
+    obs_start_year: int  # first year of the observed series and of the variability estimate
+    start_year: int  # first year of model trend windows
+    first_end_year: int
+    latest_year: int
+    min_hist_nat: int  # minimum number of hist-nat runs for a model to be used
+    n_samples: int  # resampled piControl segments per model and end year
+    seed: int  # seed of the per-sample seeds
+    splice_baseline_start: int  # baseline aligning paired scenario runs with all historical runs
+    splice_baseline_end: int
 
 
 class Settings(BaseSettings):

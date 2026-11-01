@@ -6,6 +6,15 @@ import numpy as np
 import typer
 from scipy.stats import norm
 
+from climate_health_map.attribution.provenance import (
+    StaleOutputError,
+    categories_path,
+    check_provenance,
+    clear_provenance,
+    trends_dir as trends_path,
+    used_settings,
+    write_provenance,
+)
 from climate_health_map.shared import get_logger, load_settings
 
 
@@ -24,7 +33,6 @@ def assign_categories(
     af_mean: np.ndarray,
     hn_mean: np.ndarray,
     tail: float = 5.0,
-    closer: bool = True,
 ) -> np.ndarray:
     """Attribution category per cell from the observed trend, its percentiles on the all-forcing (pa) and natural-only (ph) distributions
     and the means of the two distributions.
@@ -32,7 +40,7 @@ def assign_categories(
     A trend beyond the natural-only range in its own direction is detectable. If it has the sign of the all-forcing mean,
     it is categorised ±3, ±2 or ±1 as stronger than, within or weaker than the all-forcing range, with the sign of the trend.
     If it has the opposite sign, it is ±4. Trends within or against the natural-only range are 0.
-    With closer (the default), a trend stronger than the all-forcing range must also be closer to the all-forcing than to the natural-only mean,
+    A trend stronger than the all-forcing range must also be closer to the all-forcing than to the natural-only mean,
     otherwise it is ±1 (Knutson and Zeng, 2018).
     The result is NaN where the observed trend or the all-forcing mean is zero or an input is missing.
     """
@@ -42,58 +50,20 @@ def assign_categories(
     stronger = ((sign > 0) & (pa >= upper)) | ((sign < 0) & (pa <= tail))
     weaker = ((sign > 0) & (pa <= tail)) | ((sign < 0) & (pa >= upper))
     magnitude = np.select([stronger, weaker], [3.0, 1.0], default=2.0)
-    if closer:
-        magnitude = np.where((magnitude == 3) & ~(np.abs(obs - af_mean) < np.abs(obs - hn_mean)), 1.0, magnitude)
+    magnitude = np.where((magnitude == 3) & ~(np.abs(obs - af_mean) < np.abs(obs - hn_mean)), 1.0, magnitude)
     cats = np.where(detectable, np.where(np.sign(obs) == sign, sign * magnitude, 4 * np.sign(obs)), 0.0)
     valid = np.isfinite(obs) & np.isfinite(pa) & np.isfinite(ph) & np.isfinite(af_mean) & np.isfinite(hn_mean) & (obs != 0) & (sign != 0)
     return np.where(valid, cats, np.nan)
 
 
-def assign_categories_legacy(
-    obs: np.ndarray,
-    pa: np.ndarray,
-    ph: np.ndarray,
-    tail: float = 5.0,
-    pos_hn_cut: float = 96.0,
-    neg_hn_cut: float = 4.0,
-) -> np.ndarray:
-    """Categories of the legacy `attr_categorize`, which takes the sign from the observed trend and has no category ±4.
-
-    The result is NaN where the observed trend is zero or an input is missing.
-    """
-    upper = 100 - tail
-    in_af = (pa > tail) & (pa < upper)
-    in_hn = (ph > tail) & (ph < upper)
-    pos, neg = obs > 0, obs < 0
-    conditions = [
-        pos & in_af & (ph <= pos_hn_cut),
-        pos & in_af,
-        pos & in_hn,
-        pos & (pa <= tail) & (ph >= upper),
-        pos & (pa >= upper),
-        pos & (ph <= tail),
-        neg & in_af & (ph >= neg_hn_cut),
-        neg & in_af,
-        neg & in_hn,
-        neg & (ph <= tail) & (pa >= upper),
-        neg & (pa <= tail),
-        neg & (ph >= upper),
-    ]
-    values = [0.0, 2.0, 0.0, 1.0, 3.0, 0.0, 0.0, -2.0, 0.0, -1.0, -3.0, 0.0]
-    cats = np.select(conditions, values, default=np.nan)
-    return np.where(np.isfinite(obs) & np.isfinite(pa) & np.isfinite(ph), cats, np.nan)
-
-
-def categorize_trends(obs: np.ndarray, af: np.ndarray, hn: np.ndarray, legacy: bool = False, closer: bool = True) -> np.ndarray:
+def categorize_trends(obs: np.ndarray, af: np.ndarray, hn: np.ndarray) -> np.ndarray:
     """Attribution category per cell from the observed trend (lat, lon) and the all-forcing and natural-only trend samples (sample, lat, lon).
 
     Each sample set is fitted with a normal distribution, and the observed trend is placed on it as a percentile.
     """
     pa = norm.cdf(obs, af.mean(axis=0), af.std(axis=0)) * 100
     ph = norm.cdf(obs, hn.mean(axis=0), hn.std(axis=0)) * 100
-    if legacy:
-        return assign_categories_legacy(obs, pa, ph)
-    return assign_categories(obs, pa, ph, af.mean(axis=0), hn.mean(axis=0), closer=closer)
+    return assign_categories(obs, pa, ph, af.mean(axis=0), hn.mean(axis=0))
 
 
 LEVELS = np.arange(101.0)
@@ -114,7 +84,7 @@ def percentile_of(obs: np.ndarray, quantiles: np.ndarray) -> np.ndarray:
     return np.where(np.isfinite(obs) & np.isfinite(quantiles).all(axis=0), p, np.nan)
 
 
-def categorize_all(obs_trend: np.ndarray, model_files: Sequence[Path], average: bool = False, legacy: bool = False, closer: bool = True) -> np.ndarray:
+def categorize_all(obs_trend: np.ndarray, model_files: Sequence[Path], average: bool = False) -> np.ndarray:
     """Categories (end_year, lat, lon) from observed trends (end_year, lat, lon) and the resampled samples of each model file.
 
     By default the samples of all models are pooled and fitted with a normal distribution.
@@ -125,7 +95,7 @@ def categorize_all(obs_trend: np.ndarray, model_files: Sequence[Path], average: 
         runs = [read_arrays(p, ['resampled_af', 'resampled_hn']) for p in model_files]
         af = np.concatenate([r['resampled_af'] for r in runs], axis=1)
         hn = np.concatenate([r['resampled_hn'] for r in runs], axis=1)
-        return np.stack([categorize_trends(obs_trend[i], af[i], hn[i], legacy=legacy, closer=closer) for i in range(len(obs_trend))])
+        return np.stack([categorize_trends(obs_trend[i], af[i], hn[i]) for i in range(len(obs_trend))])
     shape = (len(obs_trend), len(LEVELS), *obs_trend.shape[1:])
     quantiles = {k: np.zeros(shape) for k in ('resampled_af', 'resampled_hn')}
     means = {k: np.zeros(obs_trend.shape) for k in ('resampled_af', 'resampled_hn')}
@@ -137,29 +107,13 @@ def categorize_all(obs_trend: np.ndarray, model_files: Sequence[Path], average: 
     cats = []
     for i in range(len(obs_trend)):
         pa, ph = (percentile_of(obs_trend[i], quantiles[k][i] / n) for k in ('resampled_af', 'resampled_hn'))
-        if legacy:
-            cats.append(assign_categories_legacy(obs_trend[i], pa, ph))
-        else:
-            cats.append(assign_categories(obs_trend[i], pa, ph, means['resampled_af'][i] / n, means['resampled_hn'][i] / n, closer=closer))
+        cats.append(assign_categories(obs_trend[i], pa, ph, means['resampled_af'][i] / n, means['resampled_hn'][i] / n))
     return np.stack(cats)
 
 
 def categorize(
     config: Annotated[Path | None, typer.Option(help='Path to config file (default: $CH_CONFIG or config/default.env)')] = None,
     variable: Annotated[str, typer.Option(help='Climate variable to categorize (tas: pooled normal distribution, pr: average of model percentiles)')] = 'tas',
-    trends_dir: Annotated[
-        Path | None, typer.Option(help='Trend files as obs.nc and <model>.nc (default: <DATA_ROOT>/attribution/trends/<variable>_<grid>)')
-    ] = None,
-    target: Annotated[Path | None, typer.Option(help='Output netCDF (default: <DATA_ROOT>/attribution/categories/<variable>_<grid>.nc)')] = None,
-    grid: Annotated[str | None, typer.Option(help='Grid suffix of the trend directory (default: grid in config/attribution.yaml)')] = None,
-    models: Annotated[list[str] | None, typer.Option(help='Models to use (default: models in config/attribution.yaml)')] = None,
-    closer: Annotated[
-        bool,
-        typer.Option(
-            help='Require trends stronger than the all-forcing range to be closer to the all-forcing than the natural-only mean (--no-closer to omit)'
-        ),
-    ] = True,
-    legacy: Annotated[bool, typer.Option(help='Use the legacy category rules (sign from the observed trend, no category 4)')] = False,
     loglevel: Annotated[str, typer.Option(help='Loglevel')] = 'INFO',
 ) -> None:
     """Assign per-cell attribution categories from resampled trend distributions."""
@@ -169,18 +123,24 @@ def categorize(
     if variable not in ('tas', 'pr'):
         raise typer.BadParameter('variable must be tas or pr')
     settings = load_settings(config)
-    grid = grid or settings.ATTRIBUTION.grid
-    models = models or settings.ATTRIBUTION.models
-    trends_dir = trends_dir or settings.DATA_ROOT / 'attribution' / 'trends' / f'{variable}_{grid}'
-    target = target or settings.DATA_ROOT / 'attribution' / 'categories' / f'{variable}_{grid}.nc'
+    grid = settings.ATTRIBUTION.grid
+    models = settings.ATTRIBUTION.models
+    trends_dir = trends_path(settings, variable)
+    target = categories_path(settings, variable)
     model_files = [trends_dir / f'{m}.nc' for m in models]
     missing = [p.name for p in model_files if not p.is_file()]
     if missing:
         raise typer.BadParameter(f'Missing trend files in {trends_dir}: {", ".join(missing)}')
 
+    try:
+        upstream = check_provenance(trends_dir, used_settings(settings), f'healthmap attribution trends --variable {variable}')
+    except StaleOutputError as e:
+        raise typer.BadParameter(str(e)) from e
+    clear_provenance(target)
+
     obs = read_arrays(trends_dir / 'obs.nc', ['trend', 'end_year', 'lat', 'lon'])
     logger.info('Categorizing %d end years from %d models', len(obs['end_year']), len(model_files))
-    cats = categorize_all(obs['trend'], model_files, average=variable == 'pr', legacy=legacy, closer=closer)
+    cats = categorize_all(obs['trend'], model_files, average=variable == 'pr')
 
     target.parent.mkdir(parents=True, exist_ok=True)
     xr.Dataset(
@@ -189,12 +149,12 @@ def categorize(
         attrs={
             'models': ' '.join(p.stem for p in model_files),
             'distribution': 'average of model percentiles' if variable == 'pr' else 'pooled normal',
-            'rules': 'legacy' if legacy else 'paper' + (' closer' if closer else ''),
             'grid': grid,
             'source': str(trends_dir),
             'attribution': settings.ATTRIBUTION.model_dump_json(),
         },
     ).to_netcdf(target)
+    write_provenance(target, variable, grid, used_settings(settings), upstream)
     logger.info('Wrote categories to %s', target)
 
 
