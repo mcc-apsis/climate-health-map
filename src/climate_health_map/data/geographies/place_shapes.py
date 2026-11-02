@@ -83,9 +83,10 @@ PLACE_RANK = {
 }
 DEFAULT_RANK = 3
 
-# Renames so a Natural Earth polygon carries the GeoNames place name; (layer, featurecla substring,
-# name substring, new name, new featurecla or None). A featurecla reassignment moves the polygon
-# into the search pool of the renamed-to feature code, where studies class it differently.
+# Extra search names for Natural Earth polygons: (layer, featurecla substring, name substring,
+# alias, new featurecla or None). A polygon matching the substrings also matches locations named
+# `alias`, next to its own name. A featurecla reassignment moves the polygon into the search pool
+# of another feature code; the corpus name and the layer's own classification can disagree.
 RENAMES = [
     ('regions', 'Range/mtn', 'altay', 'Altay', None),
     ('regions', 'Range/mtn', 'appalach', 'Appalachian Mountains', None),
@@ -95,8 +96,11 @@ RENAMES = [
     ('regions', 'Range/mtn', 'western ghats', 'Western Ghāts', None),
     ('regions', 'Range/mtn', 'kunlun', 'Kalakunlun Shan', None),
     ('regions', 'Range/mtn', 'len mountain', 'Kölen', None),
-    ('regions', 'Range/mtn', 'taihang mts.', 'Taihang Shan', None),
+    ('regions', 'Range/mtn', 'taihang', 'Taihang Shan', None),
+    ('regions', 'Range/mtn', 'taihang', 'Taihang Shanmai', None),
     ('regions', 'Range/mtn', 'tatra mts.', 'Tatry', None),
+    ('regions', 'Range/mtn', 'tatra', 'Tatra Mountains', None),
+    ('regions', 'Range/mtn', 'carpathian', 'Carpathians', None),
     ('regions', 'Range/mtn', 'tian shan', 'Tien Shan', None),
     ('regions', 'Range/mtn', 'andes', 'Andes Mountains', None),
     ('regions', 'Range/mtn', 'hindu kush', 'Hindū Kush', None),
@@ -111,15 +115,23 @@ RENAMES = [
     ('regions', 'Plateau', 'cumberland', 'Cumberland Plateau', 'Plain'),
     ('regions', 'Plateau', 'colorado', 'San Francisco Plateau', 'Plain'),
     ('regions', 'Plain', 'gange', 'Gangetic Plain', None),
+    ('regions', 'Plain', 'gange', 'Indo-Gangetic Plain', None),
     ('regions', 'Plain', 'north china', 'Huanghuai Pingyuan', None),
+    ('regions', 'Plain', 'north china', 'Huabei Pingyuan', None),
     ('regions', 'Plateau', 'mongol', 'Nei Mongol Gaoyuan', None),
     ('regions', 'Plateau', 'deccan', 'Deccan', None),
     ('regions', 'Plateau', 'chota', 'Chota Nāgpur Plateau', None),
     ('regions', 'Plateau', 'loess', 'Huangtu Gaoyuan', None),
     ('regions', 'Plateau', 'khorat', 'Khorat Plateau', None),
     ('regions', 'Plateau', 'tibet', 'Qing Zang Gaoyuan', None),
+    ('regions', 'Plateau', 'tibet', 'Tibetan Plateau', None),
     ('regions', 'Plateau', 'polar', 'South Polar Plateau', None),
     ('regions', 'Plateau', 'yungui', 'Yungui Gaoyuan', None),
+    ('marine', 'ocean', 'pacific', 'Pacific Ocean', None),
+    ('marine', 'ocean', 'atlantic', 'Atlantic Ocean', None),
+    ('marine', 'sea', 'mediterra', 'Eastern Mediterranean', None),
+    ('marine', 'sea', 'mediterra', 'Western Mediterranean', None),
+    ('marine', 'lagoon', 'wadden', 'Wadden Sea', None),
 ]
 
 
@@ -166,29 +178,37 @@ def normalise_place_name(name: str | float) -> str | float:
 
 
 def load_place_layers(settings: Settings | None = None, config: Path | None = None) -> dict[str, 'GeoDataFrame']:
-    """Load the Natural Earth layers with lower-cased columns, renames applied and a `place_name` column."""
+    """Load the Natural Earth layers with lower-cased columns and a `place_name` search index that
+    carries each polygon's own name plus the aliases from `RENAMES`."""
     import geopandas as gpd
 
     settings = settings or load_settings(config)
     directory = place_shapes_dir(settings)
+    logger = get_logger('geographies.place_shapes', loglevel='INFO')
     layers = {}
     for key, (name, _, _) in LAYERS.items():
         gdf = gpd.read_file(directory / f'{name}.shp')
         # the regions layer ships its columns upper-cased
         gdf.columns = [str(c).lower() for c in gdf.columns]
-        for layer_key, featurecla, needle, new_name, new_featurecla in RENAMES:
+        aliases = []
+        for layer_key, featurecla, needle, alias, new_featurecla in RENAMES:
             if layer_key != key:
                 continue
             mask = gdf['featurecla'].str.contains(featurecla, case=False, na=False, regex=False) & gdf['name'].str.contains(
                 needle, case=False, na=False, regex=False
             )
-            gdf.loc[mask, 'name'] = new_name
             if new_featurecla is not None:
                 gdf.loc[mask, 'featurecla'] = new_featurecla
+            aliases.append((alias, mask))
         gdf['place_name'] = gdf['name'].map(normalise_place_name)
         if 'gn_id' in gdf.columns:
             gdf['gn_id'] = pd.to_numeric(gdf['gn_id'], errors='coerce')
-        layers[key] = gdf
+        # an alias row repeats the polygon under an additional search name
+        frames = [gdf] + [gdf.loc[mask].assign(place_name=normalise_place_name(alias)) for alias, mask in aliases if mask.any()]
+        dead = [alias for alias, mask in aliases if not mask.any()]
+        if dead:
+            logger.warning('rename aliases matched no %s polygon: %s', key, ', '.join(dead))
+        layers[key] = pd.concat(frames, ignore_index=True)
     return layers
 
 
@@ -209,9 +229,10 @@ def resolve_place_polygons(
     adm0: 'GeoDataFrame | None' = None,
     loglevel: str = 'INFO',
 ) -> 'pd.Series':
-    """Resolve each location to a place polygon: Natural Earth by geonameid then name, countries and
-    unmatched admin-1 places through the admin-0 shapes; unmatched locations get None and are scored
-    on the cell containing their point. The returned Series is keyed by `location_id`.
+    """Resolve each location to a place polygon: Natural Earth by geonameid then name (falling back
+    to the whole layer when the feature-class pool misses), countries and unmatched admin-1 places
+    through the admin-0 shapes; unmatched locations get None and are scored on the cell containing
+    their point. The returned Series is keyed by `location_id`.
 
     Where a name matches several polygons, the one containing the location's point wins, else the largest.
     """
@@ -225,22 +246,27 @@ def resolve_place_polygons(
         locations = df_locations[df_locations['feature_code'] == code]
         if locations.empty:
             continue
-        pool = layers[layer_key].reset_index(drop=True)
-        if classes is not None:
-            pool = pool[pool['featurecla'].isin(classes)]
+        all_pool = layers[layer_key].reset_index(drop=True)
+        pool = all_pool if classes is None else all_pool[all_pool['featurecla'].isin(classes)]
         gn_to_pos = {int(g): i for i, g in enumerate(pool['gn_id']) if pd.notna(g)} if by_geoname else {}
         by_name = pool.groupby('place_name', sort=False).indices
+        # GeoNames and Natural Earth classify differently (a GeoNames sea can be a Natural Earth gulf),
+        # so a class-pool miss retries the name against the whole layer
+        by_name_all = all_pool.groupby('place_name', sort=False).indices if classes is not None else None
         points = gpd.points_from_xy(locations['lon'], locations['lat'])
         matched = 0
         # geonameid decides where both sides carry one; a name match narrows by the point, then by size
         for loc_id, name, gid, point in zip(locations['location_id'], locations['name'], locations['geonameid'].astype('Float64'), points, strict=True):
+            found = pool
             shape_ids = [gn_to_pos[int(gid)]] if pd.notna(gid) and int(gid) in gn_to_pos else None
             if shape_ids is None:
                 name_ids = by_name.get(normalise_place_name(name))
+                if name_ids is None and by_name_all is not None:
+                    name_ids, found = by_name_all.get(normalise_place_name(name)), all_pool
                 shape_ids = [int(i) for i in name_ids] if name_ids is not None else None
             if shape_ids is None:
                 continue
-            geometry.loc[loc_id] = pool.geometry.iloc[_candidate_shapes(pool, shape_ids, point)[0]]
+            geometry.loc[loc_id] = found.geometry.iloc[_candidate_shapes(found, shape_ids, point)[0]]
             matched += 1
         logger.info('%s: %d locations, %d polygons, %d fall back', code, len(locations), matched, len(locations) - matched)
 
