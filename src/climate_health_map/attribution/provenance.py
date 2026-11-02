@@ -33,6 +33,11 @@ def categories_path(settings: Settings, variable: str) -> Path:
     return Path(settings.DATA_ROOT) / 'attribution' / 'categories' / f'{variable}_{settings.ATTRIBUTION.grid}.nc'
 
 
+def grid_csv(settings: Settings) -> Path:
+    """Flat CSV of the categories of all variables and years, written by `export-grid` and read by the geographies loaders."""
+    return Path(settings.DATA_ROOT) / 'attribution' / 'grid.csv'
+
+
 def sidecar(path: Path) -> Path:
     """Provenance file of an output: `provenance.json` inside a directory, `<name>.provenance.json` next to a file."""
     return path / PROVENANCE_FILE if path.is_dir() or not path.suffix else path.with_suffix('.provenance.json')

@@ -48,6 +48,8 @@ df1.merge(df2[['iso3'] + list(rename.keys())].rename(columns=rename), left_on='i
 ```
 """
 
+import typer
+
 from .continents import CONTINENT_MAP
 from .variations import country_names as COUNTRY_NORMALISATION
 from .utils import (
@@ -58,12 +60,16 @@ from .utils import (
     join_shapes,
     join_grid_shapes,
     LOCATION_FEATURE_CODES,
-    merge_grid_info,
+    GRID_FLAGS,
     merge_annual_grid_info,
     match_grid_years,
 )
 from .readers import read_places_export, load_df_places, load_grid_data, load_annual_grid_data, load_country_infos, load_annual_population
 from .features import FEATURES, FEATURE_LOOKUP
+from .grid import cells_csv, population_tif, derive_cells
+
+app = typer.Typer(no_args_is_help=True)
+app.command('derive-cells', help='Derive per-cell area, land mask and population from a WorldPop GeoTIFF')(derive_cells)
 
 __all__ = [
     'load_country_infos',
@@ -82,8 +88,11 @@ __all__ = [
     'join_shapes',
     'join_grid_shapes',
     'LOCATION_FEATURE_CODES',
-    'merge_grid_info',
+    'GRID_FLAGS',
     'merge_annual_grid_info',
     'match_grid_years',
     'load_annual_grid_data',
+    'derive_cells',
+    'cells_csv',
+    'population_tif',
 ]

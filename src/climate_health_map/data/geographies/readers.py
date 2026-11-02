@@ -4,8 +4,9 @@ from typing import Optional
 import numpy as np
 import pandas as pd
 
+from .grid import cells_csv
 from .utils import fix_geographies, get_naming_mask
-from climate_health_map.shared import read_any_pd
+from climate_health_map.shared import load_settings, read_any_pd
 
 here = Path(__file__).parent.resolve()
 
@@ -34,45 +35,19 @@ def load_country_infos() -> pd.DataFrame:
     )
 
 
-def load_grid_data() -> pd.DataFrame:
-    df_grid = (
-        pd.read_csv(here / '_grid_data.csv', dtype=str, keep_default_na=False)
-        .map(str.strip, na_action='ignore')
-        .replace(
-            {'': pd.NA, np.nan: pd.NA},
-        )
-        .astype(
-            {
-                'index': 'Int32',
-                'LAT': 'Float64',
-                'LON': 'Float64',
-                'area': 'Float64',
-                #'is_land': 'bool',
-                'precip_da': 'Float32',
-                'temp_da': 'Float32',
-                'population': 'Float32',
-            },
-        )
-        # we need two steps before getting to int
-        .astype({'precip_da': 'Int8', 'temp_da': 'Int8', 'population': 'Int32'})
-        .set_index('index')
-    )
-    df_grid['grid_cooler'] = df_grid['temp_da'].isin([-2, -3])
-    df_grid['grid_warmer'] = df_grid['temp_da'].isin([2, 3])
-    df_grid['grid_wetter'] = df_grid['precip_da'].isin([2, 3])
-    df_grid['grid_drier'] = df_grid['precip_da'].isin([-2, -3])
-    df_grid['grid_attributable'] = df_grid[['grid_cooler', 'grid_warmer', 'grid_wetter', 'grid_drier']].any(axis=1)
-
-    df_grid['attribution'] = 0  # no attribution
-    df_grid.loc[df_grid['grid_attributable'], 'attribution'] = 1  # temp or humidity
-    df_grid.loc[df_grid[['grid_cooler', 'grid_warmer']].any(axis=1) & df_grid[['grid_wetter', 'grid_drier']].any(axis=1), 'attribution'] = 2
-
-    df_grid['is_land'] = df_grid['is_land'].map({'True': True, 'False': False})
-    return df_grid.reset_index(names='grid_id')
+def load_grid_data(source: Path | None = None, config: Path | None = None) -> pd.DataFrame:
+    """Per-cell area, land and population, derived from the WorldPop raster by `healthmap geographies derive-cells`."""
+    if source is None:
+        source = cells_csv(load_settings(config))
+    return pd.read_csv(source)
 
 
-def load_annual_grid_data(source: Path) -> pd.DataFrame:
+def load_annual_grid_data(source: Path | None = None, config: Path | None = None) -> pd.DataFrame:
     """Load the exported per-cell, per-year attribution categories with direction flags, keyed by (LAT, LON, end_year)."""
+    if source is None:
+        from climate_health_map.attribution.provenance import grid_csv  # deferred: pulls the heavy attribution imports
+
+        source = grid_csv(load_settings(config))
     df = pd.read_csv(source, dtype={'end_year': 'Int32', 'temp_cat': 'Int8', 'precip_cat': 'Int8'})
     df['grid_cooler'] = df['temp_cat'].isin([-2, -3])
     df['grid_warmer'] = df['temp_cat'].isin([2, 3])

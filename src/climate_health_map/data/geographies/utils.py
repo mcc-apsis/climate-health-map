@@ -2,7 +2,6 @@ import logging
 from typing import TYPE_CHECKING
 
 import pandas as pd
-import numpy as np
 
 from climate_health_map.data import LABELS
 
@@ -369,119 +368,6 @@ def join_grid_shapes(df_grid: pd.DataFrame, shapes: 'GeoDataFrame', resolution: 
     )
 
 
-def merge_grid_info(
-    df: pd.DataFrame,
-    df_locations: pd.DataFrame,
-    df_grid: pd.DataFrame,
-    df_population: pd.DataFrame,
-    shapes: 'GeoDataFrame',
-    location_codes_abstracted: set[str],
-    location_codes_direct: set[str],
-    logger: logging.Logger,
-    reference_year: int = 2024,
-    resolution: float = 2.5,
-) -> tuple[pd.DataFrame, pd.DataFrame, pd.DataFrame]:
-    location_mask = df_locations['incl_major'] & df_locations['incl_impacts'] & df_locations['incl_location']
-    mask_abstracted = df_locations['feature_code'].isin(location_codes_abstracted)
-    mask_direct = df_locations['feature_code'].isin(location_codes_direct)
-
-    # Match dataframes to shapes
-    points_locations = join_shapes(df_locations[location_mask], shapes=shapes, keep_columns=['location_id']).set_index('item_id')
-
-    # Match df_grid to shapes
-    points_grid = join_grid_shapes(df_grid, shapes=shapes, resolution=resolution)
-    # Merge in [reference_year] population based on ISO code (note, some shape files might not have `ISO_A3`, then you need to edit this
-    points_grid = points_grid.merge(
-        df_population[df_population['year'] == reference_year][['iso3', 'Population']],
-        left_on='ISO_A3',
-        right_on='iso3',
-        how='left',
-    )
-    # Some cells might span multiple iso codes/shapes, collapse things back down and take average population
-    points_grid = points_grid.reset_index(drop=True).groupby('grid_id').agg({**{col: 'first' for col in points_grid.columns}, 'Population': 'mean'})
-
-    # Match low-level locations to grid
-    locations_direct = df_locations[mask_direct].merge(df_grid.reset_index(drop=True), left_on=['LAT', 'LON'], right_on=['LAT', 'LON'])[
-        ['grid_id', 'item_id', 'location_id']
-    ]
-
-    # Get locations that have a high-level feature code and are matched to a shape
-    locations_abstracted = points_locations[
-        points_locations.index.isin(df_locations[mask_abstracted].index) & points_locations['shape_id'].notna()
-    ].reset_index()[['item_id', 'shape_id', 'location_id']]
-    # Match high-level locations to shape-matched grid
-    locations_abstracted = points_grid[points_grid['shape_id'].notna()][['grid_id', 'shape_id']].merge(
-        locations_abstracted,
-        left_on='shape_id',
-        right_on='shape_id',
-    )
-
-    logger.info(
-        f'Found {locations_abstracted["item_id"].nunique():,} records in {locations_abstracted["shape_id"].nunique():,} shapes / '
-        f'{locations_abstracted["grid_id"].nunique():,} grid cells (matched shape entries: {locations_abstracted.shape[0]:,} / '
-        f'{(location_mask & mask_abstracted).sum():,})',
-    )
-    logger.info(
-        f'Found {locations_direct["item_id"].nunique():,} records in {locations_direct["grid_id"].nunique():,} grid cells '
-        f'(filtered locations: {mask_direct.sum():,})',
-    )
-
-    # Count number of studies with specific location per grid cell and normalise by grid cell population
-    counts_direct = df_grid[['grid_id', 'population']].merge(
-        locations_direct.groupby('grid_id')['item_id'].nunique().rename('study_count'),
-        left_on='grid_id',
-        right_on='grid_id',
-        how='left',
-    )
-    counts_direct['studies_per_capita'] = (
-        counts_direct.replace({0: np.nan})
-        .apply(lambda row: row['study_count'] / row['population'], axis=1)
-        .replace(
-            {pd.NA: np.nan},
-        )
-        .astype('float')
-    )
-    counts_direct.drop(columns=['population', 'grid_id'], inplace=True)
-    counts_direct.rename_axis('grid_id', inplace=True)
-    logger.info(f'counts_direct.shape={counts_direct.shape}')
-
-    # Count number of studies with region/abstracted location per grid cell and normalise by df_population
-    counts_abstracted = locations_abstracted.groupby('grid_id')['item_id'].nunique().rename('study_count')
-    counts_abstracted = points_grid[['grid_id', 'Population']].set_index('grid_id').join(counts_abstracted)
-    counts_abstracted['studies_per_capita'] = counts_abstracted['study_count'] / counts_abstracted['Population']
-    counts_abstracted.drop(columns='Population', inplace=True)
-    logger.info(f'counts_abstracted.shape={counts_abstracted.shape}')
-
-    # Merge both counts and per capita values
-    counts = df_grid.join(counts_direct, how='left').join(counts_abstracted, how='left', lsuffix='_direct', rsuffix='_abstracted')
-    counts['study_count'] = (counts['study_count_direct'].fillna(0) + counts['study_count_abstracted'].fillna(0)).replace({0: np.nan})
-    counts['studies_per_capita'] = (counts['studies_per_capita_direct'].fillna(0) + counts['studies_per_capita_abstracted'].fillna(0)).replace({0: np.nan})
-    logger.info(f'counts.shape={counts.shape}')
-
-    df_locations = df_locations.merge(
-        pd.concat([locations_abstracted, locations_direct])
-        .merge(df_grid, left_on='grid_id', right_on='grid_id', how='left')
-        .groupby('location_id')[['grid_cooler', 'grid_warmer', 'grid_wetter', 'grid_drier', 'grid_attributable', 'is_land']]
-        .any()
-        .reset_index(),
-        left_on='location_id',
-        right_on='location_id',
-        how='left',
-    )
-    logger.info(f'df_locations.shape={df_locations.shape}')
-
-    df = df.join(
-        pd.concat([locations_abstracted, locations_direct])
-        .merge(df_grid, left_on='grid_id', right_on='grid_id', how='left')
-        .groupby('item_id')[['grid_cooler', 'grid_warmer', 'grid_wetter', 'grid_drier', 'grid_attributable', 'is_land']]
-        .any(),
-        how='left',
-    )
-    logger.info(f'df.shape={df.shape}')
-
-    return df, df_locations, counts
-
-
 GRID_FLAGS = ['grid_cooler', 'grid_warmer', 'grid_wetter', 'grid_drier', 'grid_attributable']
 
 
@@ -507,10 +393,11 @@ def merge_annual_grid_info(
     resolution: float = 2.5,
     flags: list[str] | None = None,
 ) -> tuple[pd.DataFrame, pd.DataFrame]:
-    """Attach the grid flags of each study, using the grid year that matches its publication year.
+    """Attach per-cell grid flags to studies, each place reading the grid year that matches its publication year.
 
-    Same matching of places to cells as `merge_grid_info`, but each place reads the cell's category from
-    `df_grid[grid_year]` instead of a single collapsed grid column. Studies whose publication predates the grid stay unmatched.
+    Low-level places join the cell they bin to; high-level places join every cell of the shape containing them.
+    Study flags are the any-reduction over that study's places, and stay NaN where no place matches the grid.
+    `df_grid` holds one row per cell and end year, from `load_annual_grid_data`, optionally merged with cell attributes.
     """
     flags = flags or GRID_FLAGS
     location_mask = df_locations['incl_major'] & df_locations['incl_impacts'] & df_locations['incl_location']
@@ -528,7 +415,7 @@ def merge_annual_grid_info(
         df_annual, left_on=['LAT', 'LON', 'grid_year'], right_on=['LAT', 'LON', 'end_year'], how='inner', suffixes=(None, '_grid')
     )
 
-    # High-level locations reach the cells through the shapes that contain them, collapsed to one shape per cell as in merge_grid_info
+    # High-level locations reach the cells through the shapes that contain them; each cell keeps its first matching shape
     points_grid = join_grid_shapes(df_cells, shapes=shapes, resolution=resolution)
     points_grid = points_grid.reset_index(drop=True).groupby('grid_id').agg(dict.fromkeys(points_grid.columns, 'first'))
     points_locations = join_shapes(df_locations[location_mask], shapes=shapes, keep_columns=['location_id']).set_index('item_id')

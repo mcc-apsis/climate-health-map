@@ -24,3 +24,12 @@ scripts/sync_data.sh pull shapes_2026/
 ```
 
 Endpoints can be overridden with the `REMOTE` / `LOCAL` environment variables.
+
+## Derived
+
+`data/geographies/cells.csv` (per-cell area, land, population) is generated from the synced
+WorldPop raster by:
+
+```bash
+healthmap geographies derive-cells
+```

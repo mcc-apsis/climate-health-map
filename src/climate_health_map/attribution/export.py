@@ -10,6 +10,7 @@ from climate_health_map.attribution.provenance import (
     categories_path,
     check_provenance,
     clear_provenance,
+    grid_csv,
     used_settings,
     write_provenance,
 )
@@ -25,13 +26,14 @@ def long_frame(cats, end_year, lat, lon, column: str) -> pd.DataFrame:
 
 
 def export_grid(
-    target: Annotated[Path, typer.Option(help='Target CSV file')],
+    target: Annotated[Path | None, typer.Option(help='Target CSV file (default: attribution/grid.csv under the data root)')] = None,
     config: Annotated[Path | None, typer.Option(help='Path to config file (default: $CH_CONFIG or config/default.env)')] = None,
     loglevel: Annotated[str, typer.Option(help='Loglevel')] = 'INFO',
 ) -> None:
     """Export the per-(grid-cell, year) attribution grid as a flat CSV."""
     logger = get_logger('attribution.export', loglevel=loglevel)
     settings = load_settings(config)
+    target = target or grid_csv(settings)
     grid = settings.ATTRIBUTION.grid
     used = used_settings(settings)
 

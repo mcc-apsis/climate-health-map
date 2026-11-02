@@ -8,7 +8,7 @@ import pandas as pd
 import cartopy.io.shapereader as shpreader
 import geopandas
 
-from climate_health_map.data.geographies import merge_grid_info, load_grid_data, load_annual_population, LOCATION_FEATURE_CODES, load_country_infos
+from climate_health_map.data.geographies import merge_annual_grid_info, load_annual_grid_data, load_grid_data, LOCATION_FEATURE_CODES, load_country_infos
 from climate_health_map.shared import get_logger
 from climate_health_map.data.labels import LABELS, Collection
 from .loaders import read_base_data
@@ -162,8 +162,7 @@ def prepare_lancet_excel_export(
 ) -> None:
     logger_ = get_logger(loglevel=loglevel, logger_name='lancet-excel', run_log_init=True)
     target.mkdir(parents=True, exist_ok=True)
-    df_grid = load_grid_data()
-    df_population = load_annual_population()
+    df_grid = load_grid_data().merge(load_annual_grid_data(), on=['LAT', 'LON'])
     df_countries = load_country_infos()
 
     shpfilename = shpreader.natural_earth(resolution='110m', category='cultural', name='admin_0_countries')
@@ -218,16 +217,14 @@ def prepare_lancet_excel_export(
         else:
             shapes_ = shapes.drop(columns=['ISO_A2', 'WB_A3', 'WB_REGION', 'WB_STATUS', 'NAM_0', 'NAM_1', 'ADM1CD_c', 'GEOM_SRCE'], errors='ignore')
 
-        df, df_locations, grid_counts = merge_grid_info(
+        df, df_locations = merge_annual_grid_info(
             df=df,
             df_locations=df_locations,
             df_grid=df_grid,
-            df_population=df_population,
             shapes=shapes_,
             location_codes_abstracted=LOCATION_FEATURE_CODES[0],
             location_codes_direct=LOCATION_FEATURE_CODES[3] | LOCATION_FEATURE_CODES[2] | LOCATION_FEATURE_CODES[1],
             logger=logger_.getChild('merge'),
-            reference_year=2024,  # We propbably want to use the latest population count for normalisation
             resolution=2.5,
         )
         df_locations = df_locations.set_index('item_id', drop=False)
