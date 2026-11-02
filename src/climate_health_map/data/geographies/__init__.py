@@ -59,8 +59,10 @@ from .utils import (
     join_grid_shapes,
     LOCATION_FEATURE_CODES,
     merge_grid_info,
+    merge_annual_grid_info,
+    match_grid_years,
 )
-from .readers import read_places_export, load_df_places, load_grid_data, load_country_infos, load_annual_population
+from .readers import read_places_export, load_df_places, load_grid_data, load_annual_grid_data, load_country_infos, load_annual_population
 from .features import FEATURES, FEATURE_LOOKUP
 
 __all__ = [
@@ -81,4 +83,7 @@ __all__ = [
     'join_grid_shapes',
     'LOCATION_FEATURE_CODES',
     'merge_grid_info',
+    'merge_annual_grid_info',
+    'match_grid_years',
+    'load_annual_grid_data',
 ]

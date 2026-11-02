@@ -480,3 +480,81 @@ def merge_grid_info(
     logger.info(f'df.shape={df.shape}')
 
     return df, df_locations, counts
+
+
+GRID_FLAGS = ['grid_cooler', 'grid_warmer', 'grid_wetter', 'grid_drier', 'grid_attributable']
+
+
+def match_grid_years(df_locations: pd.DataFrame, df_grid: pd.DataFrame, publication_year: str = 'Publication year', end_year: str = 'end_year') -> pd.Series:
+    """Match each location to a grid end year: the year before publication, or the latest grid year for later publications.
+
+    Locations with no publication year also get the latest grid year; there are none in the exports used here.
+    """
+    years = df_grid[end_year]
+    latest = years.max()
+    matched = (df_locations[publication_year].astype('Float64') - 1).fillna(float(latest)).clip(upper=float(latest))
+    return matched.where(matched >= years.min()).astype('Int32').rename('grid_year')
+
+
+def merge_annual_grid_info(
+    df: pd.DataFrame,
+    df_locations: pd.DataFrame,
+    df_grid: pd.DataFrame,
+    shapes: 'GeoDataFrame',
+    location_codes_abstracted: set[str],
+    location_codes_direct: set[str],
+    logger: logging.Logger,
+    resolution: float = 2.5,
+    flags: list[str] | None = None,
+) -> tuple[pd.DataFrame, pd.DataFrame]:
+    """Attach the grid flags of each study, using the grid year that matches its publication year.
+
+    Same matching of places to cells as `merge_grid_info`, but each place reads the cell's category from
+    `df_grid[grid_year]` instead of a single collapsed grid column. Studies whose publication predates the grid stay unmatched.
+    """
+    flags = flags or GRID_FLAGS
+    location_mask = df_locations['incl_major'] & df_locations['incl_impacts'] & df_locations['incl_location']
+    mask_abstracted = df_locations['feature_code'].isin(location_codes_abstracted)
+    mask_direct = df_locations['feature_code'].isin(location_codes_direct)
+
+    df_locations = df_locations.assign(grid_year=match_grid_years(df_locations, df_grid))
+
+    # Cells appear once per year in df_grid; shapes are matched to the cells alone, cells carry a grid_id into the year table
+    df_cells = df_grid[['LAT', 'LON']].drop_duplicates(subset=['LAT', 'LON']).reset_index(drop=True)
+    df_annual = df_grid.merge(df_cells.assign(grid_id=df_cells.index), on=['LAT', 'LON'])
+
+    # Low-level locations fall in exactly one cell; take that cell's flags in the matched year
+    locations_direct = df_locations[mask_direct].merge(
+        df_annual, left_on=['LAT', 'LON', 'grid_year'], right_on=['LAT', 'LON', 'end_year'], how='inner', suffixes=(None, '_grid')
+    )
+
+    # High-level locations reach the cells through the shapes that contain them, collapsed to one shape per cell as in merge_grid_info
+    points_grid = join_grid_shapes(df_cells, shapes=shapes, resolution=resolution)
+    points_grid = points_grid.reset_index(drop=True).groupby('grid_id').agg(dict.fromkeys(points_grid.columns, 'first'))
+    points_locations = join_shapes(df_locations[location_mask], shapes=shapes, keep_columns=['location_id']).set_index('item_id')
+    locations_abstracted = (
+        points_locations[points_locations.index.isin(df_locations[mask_abstracted].index) & points_locations['shape_id'].notna()]
+        .reset_index()[['item_id', 'location_id', 'shape_id']]
+        .merge(df_locations[['location_id', 'grid_year']], on='location_id', how='left')
+    )
+    locations_abstracted = (
+        points_grid[points_grid['shape_id'].notna()][['grid_id', 'shape_id']]
+        .merge(locations_abstracted, on='shape_id', how='inner')
+        .merge(df_annual, left_on=['grid_id', 'grid_year'], right_on=['grid_id', 'end_year'], how='inner', suffixes=('_cell', None))
+    )
+
+    logger.info(
+        f'Direct: {locations_direct["item_id"].nunique():,} records in {locations_direct["grid_id"].nunique():,} grid cells '
+        f'(filtered locations: {mask_direct.sum():,})',
+    )
+    logger.info(
+        f'Abstracted: {locations_abstracted["item_id"].nunique():,} records in {locations_abstracted["grid_id"].nunique():,} grid cells '
+        f'(matched shape entries: {len(locations_abstracted):,} / {(location_mask & mask_abstracted).sum():,})',
+    )
+
+    matched = pd.concat([locations_direct, locations_abstracted])
+    df_locations = df_locations.join(matched.groupby('location_id')[flags].any(), on='location_id', how='left')
+    df = df.join(matched.groupby('item_id')[flags].any(), how='left')
+    logger.info(f'df.shape={df.shape}')
+
+    return df, df_locations

@@ -71,6 +71,17 @@ def load_grid_data() -> pd.DataFrame:
     return df_grid.reset_index(names='grid_id')
 
 
+def load_annual_grid_data(source: Path) -> pd.DataFrame:
+    """Load the exported per-cell, per-year attribution categories with direction flags, keyed by (LAT, LON, end_year)."""
+    df = pd.read_csv(source, dtype={'end_year': 'Int32', 'temp_cat': 'Int8', 'precip_cat': 'Int8'})
+    df['grid_cooler'] = df['temp_cat'].isin([-2, -3])
+    df['grid_warmer'] = df['temp_cat'].isin([2, 3])
+    df['grid_wetter'] = df['precip_cat'].isin([2, 3])
+    df['grid_drier'] = df['precip_cat'].isin([-2, -3])
+    df['grid_attributable'] = df[['grid_cooler', 'grid_warmer', 'grid_wetter', 'grid_drier']].any(axis=1)
+    return df
+
+
 def load_annual_population():
     """
     ```bash

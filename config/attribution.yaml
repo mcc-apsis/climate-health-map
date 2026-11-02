@@ -13,7 +13,7 @@ ATTRIBUTION:
   scenario: ssp370
   obs_start_year: 1940
   start_year: 1951
-  first_end_year: 1990
+  first_end_year: 1989
   latest_year: 2023
   min_hist_nat: 3
   n_samples: 50

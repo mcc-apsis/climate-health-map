@@ -63,7 +63,8 @@ The natural-only ensemble mean is the mean of the hist-nat runs.
 ### Trends
 
 Linear trends are ordinary least-squares slopes, expressed per century.
-They are computed for each end year Y from 1990 to 2023.
+They are computed for each end year Y from 1989 to 2023.
+The first end year is the grid year of the earliest studies (published 1990, matched to the year before publication).
 Model trends cover 1951–Y and are computed from the all-forcing and natural-only ensemble means of each model.
 The hist-nat simulations end in 2020,
 so natural-only trends for end years 2021–2023 cover 1951–2020.
@@ -114,7 +115,7 @@ Cells with a zero observed trend, a zero all-forcing mean or missing inputs have
 A trend that would be ±3 must also be closer to the all-forcing mean than to the natural-only mean,
 and is otherwise ±1 (Knutson and Zeng, 2018).
 
-Category ±4 covers 5.7% (1990) and 8.7% (2023) of the precipitation area, and 0.6% (1990) and none (2023) of the temperature area (latitude-weighted).
+Category ±4 covers 5.7% (1989) and 8.7% (2023) of the precipitation area, and 1.0% (1989) and none (2023) of the temperature area (latitude-weighted).
 
 ### References
 
@@ -155,7 +156,7 @@ healthmap attribution export-grid  # per-(cell, year) attribution grid CSV
 
 Decisions are recorded in this document and in `config/attribution.yaml`, which is read through `settings.ATTRIBUTION`.
 The configuration holds the model list, grid (`g025`), scenario (`ssp370`), observation start year (1940),
-trend start year (1951), first and last end year (1990 and 2023), minimum number of hist-nat runs (3),
+trend start year (1951), first and last end year (1989 and 2023), minimum number of hist-nat runs (3),
 number of resampled segments (50) with seed 2023, and the splice baseline (1995–2014).
 The category tail (5%) is a keyword default of `assign_categories`.
 `trends --variable pr` writes to `data/attribution/trends/pr_g025`,
