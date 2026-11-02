@@ -1,6 +1,7 @@
 import logging
 from typing import TYPE_CHECKING
 
+import numpy as np
 import pandas as pd
 
 from climate_health_map.data import LABELS
@@ -444,4 +445,84 @@ def merge_annual_grid_info(
     df = df.join(matched.groupby('item_id')[flags].any(), how='left')
     logger.info(f'df.shape={df.shape}')
 
+    return df, df_locations
+
+
+def merge_grid_shares(
+    df: pd.DataFrame,
+    df_locations: pd.DataFrame,
+    df_grid: pd.DataFrame,
+    shapes: 'GeoDataFrame',
+    place_layers: dict[str, 'GeoDataFrame'],
+    logger: logging.Logger,
+    drivers: dict[str, str] | None = None,
+    driver_threshold: float = 0.5,
+) -> tuple[pd.DataFrame, pd.DataFrame]:
+    """Attach per-study area-weighted attribution shares.
+
+    Each place becomes its polygon's cells (or the cell containing its point), and ancestors are
+    pruned so a paper is scored on its smallest locations. A study is scored only on the variable
+    its driver classifier picked: `temp_share` is the share of the paper's deduplicated cell area
+    in a ±2/±3 temperature category at the paper's matched end year, `precip_share` likewise. Both
+    are NaN where the classifier did not pick that variable or no cell matched the grid; the share
+    is binarised by a threshold left to the caller.
+    """
+    import geopandas as gpd
+
+    from .place_shapes import prune_ancestor_locations, resolve_place_polygons
+
+    drivers = drivers or {'temp': 'driver|1', 'precip': 'driver|3'}
+    location_mask = df_locations['incl_major'] & df_locations['incl_impacts'] & df_locations['incl_location']
+    df_locations = df_locations.assign(grid_year=match_grid_years(df_locations, df_grid))
+    # location_id collides across merged export sources; renumber the scoring subset
+    locations = df_locations[location_mask].copy()
+    locations['location_id'] = np.arange(len(locations))
+    geometry = resolve_place_polygons(locations, place_layers, adm0=shapes, loglevel=logging.getLevelName(logger.level))
+    keep = prune_ancestor_locations(locations, geometry, logger)
+    scored = locations.set_index('location_id').loc[keep[keep].index]
+    place_geometry = geometry.loc[scored.index]
+
+    # cells: one centroid point per grid cell, with area; polygon places take the cells centred inside them
+    cells = df_grid[['LAT', 'LON', 'area']].drop_duplicates(subset=['LAT', 'LON']).reset_index(drop=True).assign(cell_id=lambda t: t.index)
+    cell_points = gpd.GeoDataFrame(cells, geometry=gpd.points_from_xy(cells['LON'], cells['LAT']), crs='EPSG:4326')
+    polygons = gpd.GeoDataFrame(geometry=place_geometry.where(place_geometry.notna()), crs='EPSG:4326')
+    via_polygon = cell_points.sjoin(polygons[polygons.geometry.notna()], predicate='within', how='inner').rename(columns={'index_right': 'location_id'})[
+        ['cell_id', 'location_id']
+    ]
+    # point fallback: LAT/LON already hold the binned cell coords, so an exact coord merge names the cell
+    fallback_points = scored.loc[place_geometry[place_geometry.isna()].index, ['LAT', 'LON']]
+    via_point = (
+        fallback_points.merge(cells[['LAT', 'LON', 'cell_id']], on=['LAT', 'LON'], how='inner')
+        .rename_axis('location_id')
+        .reset_index()[['cell_id', 'location_id']]
+    )
+    pairs = (
+        pd.concat([via_polygon, via_point])
+        .merge(scored[['item_id', 'grid_year']].rename_axis('location_id').reset_index(), on='location_id')
+        .merge(cells[['cell_id', 'area']], on='cell_id')
+        .drop_duplicates(subset=['item_id', 'cell_id', 'grid_year'])
+    )
+    annual = df_grid.merge(cells[['LAT', 'LON', 'cell_id']], on=['LAT', 'LON'])
+    matched = pairs.merge(annual[['cell_id', 'end_year', 'temp_cat', 'precip_cat']], left_on=['cell_id', 'grid_year'], right_on=['cell_id', 'end_year'])
+    logger.info('%d papers scored on %d (cell, year) matches', matched['item_id'].nunique(), len(matched))
+
+    shares = {}
+    for var, column in drivers.items():
+        attributed = matched.loc[matched[f'{var}_cat'].abs().isin([2, 3])].groupby('item_id')['area'].sum()
+        total = matched.groupby('item_id')['area'].sum()
+        share = (attributed.reindex(total.index).fillna(0) / total).astype('Float64')
+        driven = (
+            (pd.to_numeric(df[column], errors='coerce').reindex(df.index) >= driver_threshold) if column in df.columns else pd.Series(False, index=df.index)
+        )
+        shares[f'{var}_share'] = share.where(share.index.isin(driven[driven].index)).astype('Float64')
+        logger.info(
+            '%s: %d of %d driver-classified papers with cells have a share, median %.2f, >0: %d, >=0.5: %d',
+            var,
+            int(shares[f'{var}_share'].notna().sum()),
+            int(driven.fillna(False).sum()),
+            float(shares[f'{var}_share'].median()) if shares[f'{var}_share'].notna().any() else float('nan'),
+            int((shares[f'{var}_share'] > 0).sum()),
+            int((shares[f'{var}_share'] >= 0.5).sum()),
+        )
+    df = df.join(pd.DataFrame(shares), how='left')
     return df, df_locations

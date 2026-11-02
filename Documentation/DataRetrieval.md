@@ -33,3 +33,10 @@ WorldPop raster by:
 ```bash
 healthmap geographies derive-cells
 ```
+
+## Fetched
+
+`data/shapes_2026/natural_earth/` holds the Natural Earth admin-1, physical-region and marine
+polygon layers used to match abstracted place names; `healthmap geographies fetch-place-shapes`
+downloads the zips pinned by sha256 in `place_shapes.py`, verifies them, extracts, and writes
+`provenance.json` (url, sha256 per layer).

@@ -62,14 +62,17 @@ from .utils import (
     LOCATION_FEATURE_CODES,
     GRID_FLAGS,
     merge_annual_grid_info,
+    merge_grid_shares,
     match_grid_years,
 )
 from .readers import read_places_export, load_df_places, load_grid_data, load_annual_grid_data, load_country_infos, load_annual_population
 from .features import FEATURES, FEATURE_LOOKUP
 from .grid import cells_csv, population_tif, derive_cells
+from .place_shapes import fetch_place_shapes, load_place_layers, resolve_place_polygons, prune_ancestor_locations
 
 app = typer.Typer(no_args_is_help=True)
 app.command('derive-cells', help='Derive per-cell area, land mask and population from a WorldPop GeoTIFF')(derive_cells)
+app.command('fetch-place-shapes', help='Download and extract the pinned Natural Earth place layers')(fetch_place_shapes)
 
 __all__ = [
     'load_country_infos',
@@ -90,9 +93,14 @@ __all__ = [
     'LOCATION_FEATURE_CODES',
     'GRID_FLAGS',
     'merge_annual_grid_info',
+    'merge_grid_shares',
     'match_grid_years',
     'load_annual_grid_data',
     'derive_cells',
     'cells_csv',
     'population_tif',
+    'fetch_place_shapes',
+    'load_place_layers',
+    'resolve_place_polygons',
+    'prune_ancestor_locations',
 ]
