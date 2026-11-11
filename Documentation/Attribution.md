@@ -117,6 +117,20 @@ and is otherwise ±1 (Knutson and Zeng, 2018).
 
 Category ±4 covers 5.7% (1989) and 8.7% (2023) of the precipitation area, and 1.0% (1989) and none (2023) of the temperature area (latitude-weighted).
 
+### Paper-level attribution
+
+Papers are deemed to show attributable climate impacts when the climate drivers causing impacts show attributable trends in the locations studied.
+
+Locations are extracted using the geoparser mordecai, and each paper contains 0 or more locations.
+For attribution, each location is resolved to a place polygon (Natural Earth admin-1, physical and marine regions; countries and unresolved admin-1 through admin-0 boundaries),
+and a location with no polygon falls back to the cell containing its point.
+A place that contains one of the paper's finer places is dropped, so "São Paulo, Brazil" is scored on São Paulo alone.
+The paper's score is the share of its deduplicated cell weight that lies in categories ±2 or ±3
+of the variable its driver classifier picked, in the grid year before publication.
+`SCORING.weight` selects the weight column (population per cell from WorldPop 2026, the default, or cell area),
+and a paper is `grid_attributable` when its larger share reaches `SCORING.threshold` (default 0.5, read as "the majority of the study area's people live in attributable cells").
+Papers the classifier did not assign to either variable, or whose places matched no grid cell, stay unattributed with share `NA`.
+
 ### References
 
 - Brunner, L., Hauser, M., Lorenz, R. and Beyerle, U. (2020). The ETH Zurich CMIP6 next generation archive: technical documentation. Zenodo. https://doi.org/10.5281/zenodo.3734128
@@ -154,7 +168,7 @@ healthmap attribution categorize   # per-cell attribution category (--variable t
 healthmap attribution export-grid  # per-(cell, year) attribution grid CSV
 ```
 
-Decisions are recorded in this document and in `config/attribution.yaml`, which is read through `settings.ATTRIBUTION`.
+Decisions are recorded in this document and in `config/attribution.yaml`, which is read through `settings.ATTRIBUTION` (and `settings.SCORING` for the paper-level scoring of the exports).
 The configuration holds the model list, grid (`g025`), scenario (`ssp370`), observation start year (1940),
 trend start year (1951), first and last end year (1989 and 2023), minimum number of hist-nat runs (3),
 number of resampled segments (50) with seed 2023, and the splice baseline (1995–2014).

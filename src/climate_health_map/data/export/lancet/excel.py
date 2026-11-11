@@ -11,8 +11,8 @@ from openpyxl.styles import Font, Alignment
 from openpyxl.worksheet.formula import DataTableFormula, ArrayFormula
 from openpyxl.worksheet.worksheet import Worksheet
 
-from climate_health_map.data.geographies import GRID_FLAGS, load_annual_grid_data, load_annual_population, load_grid_data, merge_annual_grid_info, LOCATION_FEATURE_CODES
-from climate_health_map.shared import get_logger
+from climate_health_map.data.geographies import load_annual_grid_data, load_annual_population, load_grid_data, load_place_layers, merge_grid_shares
+from climate_health_map.shared import get_logger, load_settings
 from climate_health_map.data.labels import LABELS, Collection
 from .loaders import read_base_data
 
@@ -319,18 +319,17 @@ def prepare_lancet_excel_export(
     # Load geoshapes
     shapes = gpd.read_file(shapefile, encoding='utf-8')
 
-    # Match grid info to locations and items, each location reading its cell in the year before its publication
-    # This is a bit more complex, because some locations need to be projected to a shape (e.g. country) and then back to grid cells
-    df, df_locations = merge_annual_grid_info(
+    # Score each paper on its places' polygons (falling back to point cells) in the year before publication
+    settings = load_settings()
+    df, df_locations = merge_grid_shares(
         df=df,
         df_locations=df_locations,
-        df_grid=df_annual.merge(df_cells[['LAT', 'LON', 'is_land']], on=['LAT', 'LON']),
+        df_grid=df_annual.merge(df_cells[['LAT', 'LON', 'area', 'population']], on=['LAT', 'LON']),
         shapes=shapes,
-        location_codes_abstracted=LOCATION_FEATURE_CODES[0],
-        location_codes_direct=LOCATION_FEATURE_CODES[3] | LOCATION_FEATURE_CODES[2] | LOCATION_FEATURE_CODES[1],
+        place_layers=load_place_layers(settings),
         logger=logger,
-        resolution=2.5,
-        flags=GRID_FLAGS + ['is_land'],
+        weight=settings.SCORING.weight,
+        threshold=settings.SCORING.threshold,
     )
     # The workbook grid sheet keeps cell attributes plus the categories of the latest end year
     df_grid = df_cells.merge(df_annual[df_annual['end_year'] == df_annual['end_year'].max()][['LAT', 'LON', 'temp_cat', 'precip_cat']], on=['LAT', 'LON'])

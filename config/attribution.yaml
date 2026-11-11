@@ -20,3 +20,8 @@ ATTRIBUTION:
   seed: 2023
   splice_baseline_start: 1995
   splice_baseline_end: 2014
+
+# Per-study attribution scoring used by the exports (see Documentation/Attribution.md).
+SCORING:
+  weight: population  # weight the shares by WorldPop population per cell, or by cell area
+  threshold: 0.5  # a paper counts as attributable when its share reaches this

@@ -8,8 +8,8 @@ import pandas as pd
 import cartopy.io.shapereader as shpreader
 import geopandas
 
-from climate_health_map.data.geographies import merge_annual_grid_info, load_annual_grid_data, load_grid_data, LOCATION_FEATURE_CODES, load_country_infos
-from climate_health_map.shared import get_logger
+from climate_health_map.data.geographies import load_annual_grid_data, load_grid_data, load_place_layers, merge_grid_shares, load_country_infos
+from climate_health_map.shared import get_logger, load_settings
 from climate_health_map.data.labels import LABELS, Collection
 from .loaders import read_base_data
 from .regional_groups import region_groups as indicator_regions
@@ -164,6 +164,8 @@ def prepare_lancet_excel_export(
     target.mkdir(parents=True, exist_ok=True)
     df_grid = load_grid_data().merge(load_annual_grid_data(), on=['LAT', 'LON'])
     df_countries = load_country_infos()
+    place_layers = load_place_layers()
+    settings = load_settings()
 
     shpfilename = shpreader.natural_earth(resolution='110m', category='cultural', name='admin_0_countries')
     shapes = geopandas.read_file(shpfilename, encoding='utf-8')[['ISO_A2', 'ISO_A3', 'geometry']]
@@ -210,22 +212,26 @@ def prepare_lancet_excel_export(
         )
 
         if region == 'Europe':
-            shapes_ = geopandas.read_file('data/shapes_2026/NUTS_RG_10M_2024_4326_with_UK_2021', encoding='utf-8').rename(
-                columns={'CNTR_CODE': 'ISO_A2'},
-            ).replace({'ISO_A2': {'UK': 'GB'}})
+            shapes_ = (
+                geopandas.read_file('data/shapes_2026/NUTS_RG_10M_2024_4326_with_UK_2021', encoding='utf-8')
+                .rename(
+                    columns={'CNTR_CODE': 'ISO_A2'},
+                )
+                .replace({'ISO_A2': {'UK': 'GB'}})
+            )
             shapes_ = shapes_.merge(df_countries, left_on='ISO_A2', right_on='iso2').rename(columns={'iso3': 'ISO_A3'})
         else:
             shapes_ = shapes.drop(columns=['ISO_A2', 'WB_A3', 'WB_REGION', 'WB_STATUS', 'NAM_0', 'NAM_1', 'ADM1CD_c', 'GEOM_SRCE'], errors='ignore')
 
-        df, df_locations = merge_annual_grid_info(
+        df, df_locations = merge_grid_shares(
             df=df,
             df_locations=df_locations,
             df_grid=df_grid,
             shapes=shapes_,
-            location_codes_abstracted=LOCATION_FEATURE_CODES[0],
-            location_codes_direct=LOCATION_FEATURE_CODES[3] | LOCATION_FEATURE_CODES[2] | LOCATION_FEATURE_CODES[1],
+            place_layers=place_layers,
             logger=logger_.getChild('merge'),
-            resolution=2.5,
+            weight=settings.SCORING.weight,
+            threshold=settings.SCORING.threshold,
         )
         df_locations = df_locations.set_index('item_id', drop=False)
 

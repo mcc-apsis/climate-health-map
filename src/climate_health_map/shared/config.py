@@ -25,6 +25,13 @@ class AttributionConfig(BaseModel):
     splice_baseline_end: int
 
 
+class ScoringConfig(BaseModel):
+    """Per-study attribution scoring decisions for the exports, read from the committed YAML file."""
+
+    weight: str = 'population'  # cells column the shares are weighted by: 'population' (WorldPop persons) or 'area' (km²)
+    threshold: float = 0.5  # a paper counts as attributable when its share reaches this
+
+
 class Settings(BaseSettings):
     DB: DatabaseConfig = DatabaseConfig()  # NACSOS-core database
     OPENALEX: OpenAlexConfig = OpenAlexConfig()  # OpenAlex (solr/api) config
@@ -48,6 +55,7 @@ class Settings(BaseSettings):
 
     # Committed attribution decisions, read from config/attribution.yaml (see Documentation/Attribution.md)
     ATTRIBUTION: AttributionConfig
+    SCORING: ScoringConfig = ScoringConfig()
 
     model_config = SettingsConfigDict(
         case_sensitive=True,
