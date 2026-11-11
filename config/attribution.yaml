@@ -25,3 +25,5 @@ ATTRIBUTION:
 SCORING:
   weight: population  # weight the shares by WorldPop population per cell, or by cell area
   threshold: 0.5  # a paper counts as attributable when its share reaches this
+  attr_sensitivity: true  # pass climate-sensitivity papers through the attribution-type gate
+  attr_extreme_events: true  # pass extreme-event papers through it; scenario papers are always excluded

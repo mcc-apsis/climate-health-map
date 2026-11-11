@@ -236,6 +236,8 @@ def merge_grid_shares(
     threshold: float = 0.5,
     drivers: dict[str, str] | None = None,
     driver_threshold: float = 0.5,
+    attr_types: dict[str, bool] | None = None,
+    attr_threshold: float = 0.5,
 ) -> tuple[pd.DataFrame, pd.DataFrame]:
     """Attach per-study weighted attribution shares to the papers table.
 
@@ -247,12 +249,25 @@ def merge_grid_shares(
     year, `precip_share` likewise. Both are NaN where the classifier did not pick that variable or
     no cell matched the grid. `grid_attributable` marks papers whose larger share reaches `threshold`
     and stays NA where neither variable was scored.
+    An attribution-type gate scores only papers claiming a past attribution: climate change (attr|0)
+    or trend (attr|1) attribution at `attr_threshold`, optionally extended to climate sensitivity
+    (attr|2) and extreme events (attr|3) through `attr_types`; scenario claims (attr|4) never pass.
     """
     import geopandas as gpd
 
     from .place_shapes import prune_ancestor_locations, resolve_place_polygons
 
     drivers = drivers or {'temp': 'driver|1', 'precip': 'driver|3'}
+    attr_types = attr_types or {'sensitivity': True, 'extreme_events': True}
+    attr_cols = [c for c in ('attr|0', 'attr|1') if c in df.columns]
+    attr_cols += [c for c, on in (('attr|2', attr_types['sensitivity']), ('attr|3', attr_types['extreme_events'])) if on and c in df.columns]
+    if attr_cols:
+        eligible = pd.concat([pd.to_numeric(df[c], errors='coerce') >= attr_threshold for c in attr_cols], axis=1).any(axis=1)
+        eligible = eligible[eligible].index
+    else:
+        logger.warning('no attribution-type columns in df; gate skipped')
+        eligible = df.index
+    logger.info('attribution-type gate: %d of %d papers eligible', len(eligible), len(df))
     location_mask = df_locations['incl_major'] & df_locations['incl_impacts'] & df_locations['incl_location']
     df_locations = df_locations.assign(grid_year=match_grid_years(df_locations, df_grid))
     # location_id collides across merged export sources; renumber the scoring subset
@@ -295,7 +310,7 @@ def merge_grid_shares(
         driven = (
             (pd.to_numeric(df[column], errors='coerce').reindex(df.index) >= driver_threshold) if column in df.columns else pd.Series(False, index=df.index)
         )
-        shares[f'{var}_share'] = share.where(share.index.isin(driven[driven].index)).astype('Float64')
+        shares[f'{var}_share'] = share.where(share.index.isin(driven[driven].index) & share.index.isin(eligible)).astype('Float64')
         logger.info(
             '%s: %d of %d driver-classified papers with cells have a share, median %.2f, >0: %d, >=%.2f: %d',
             var,

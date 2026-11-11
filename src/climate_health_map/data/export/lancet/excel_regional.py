@@ -232,6 +232,7 @@ def prepare_lancet_excel_export(
             logger=logger_.getChild('merge'),
             weight=settings.SCORING.weight,
             threshold=settings.SCORING.threshold,
+            attr_types={'sensitivity': settings.SCORING.attr_sensitivity, 'extreme_events': settings.SCORING.attr_extreme_events},
         )
         df_locations = df_locations.set_index('item_id', drop=False)
 

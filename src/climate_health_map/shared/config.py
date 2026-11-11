@@ -30,6 +30,8 @@ class ScoringConfig(BaseModel):
 
     weight: str = 'population'  # cells column the shares are weighted by: 'population' (WorldPop persons) or 'area' (km²)
     threshold: float = 0.5  # a paper counts as attributable when its share reaches this
+    attr_sensitivity: bool = True  # pass climate-sensitivity papers (attr|2) through the attribution-type gate
+    attr_extreme_events: bool = True  # pass extreme-event papers (attr|3) through it; scenario papers never pass
 
 
 class Settings(BaseSettings):

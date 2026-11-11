@@ -127,6 +127,9 @@ and a location with no polygon falls back to the cell containing its point.
 A place that contains one of the paper's finer places is dropped, so "São Paulo, Brazil" is scored on São Paulo alone.
 The paper's score is the share of its deduplicated cell weight that lies in categories ±2 or ±3
 of the variable its driver classifier picked, in the grid year before publication.
+Only papers claiming a past attribution are scored: the attribution-type classifier must read them as claiming climate change or trend attribution,
+or (with `SCORING.attr_sensitivity` and `SCORING.attr_extreme_events`, both default true) climate sensitivity or extreme event attribution.
+Scenario papers are always excluded, as the pipeline speaks only to observed change.
 `SCORING.weight` selects the weight column (population per cell from WorldPop 2026, the default, or cell area),
 and a paper is `grid_attributable` when its larger share reaches `SCORING.threshold` (default 0.5, read as "the majority of the study area's people live in attributable cells").
 Papers the classifier did not assign to either variable, or whose places matched no grid cell, stay unattributed with share `NA`.

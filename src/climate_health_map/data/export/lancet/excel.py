@@ -330,6 +330,7 @@ def prepare_lancet_excel_export(
         logger=logger,
         weight=settings.SCORING.weight,
         threshold=settings.SCORING.threshold,
+        attr_types={'sensitivity': settings.SCORING.attr_sensitivity, 'extreme_events': settings.SCORING.attr_extreme_events},
     )
     # The workbook grid sheet keeps cell attributes plus the categories of the latest end year
     df_grid = df_cells.merge(df_annual[df_annual['end_year'] == df_annual['end_year'].max()][['LAT', 'LON', 'temp_cat', 'precip_cat']], on=['LAT', 'LON'])
